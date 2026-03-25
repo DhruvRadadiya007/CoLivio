@@ -20,6 +20,7 @@ export interface User {
   profilePicture?: string;
   roomId?: string;
   role?: 'admin' | 'member';
+  currency?: string;
 }
 
 export interface Room {
@@ -125,6 +126,8 @@ interface AppContextType {
   logout: () => void;
   refreshData: () => Promise<void>;
   loading: boolean;
+  currency: string;
+  setCurrency: (currency: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -148,6 +151,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currency, setCurrencyState] = useState(() => localStorage.getItem('currency') || 'USD');
+
+  const setCurrency = (c: string) => {
+    localStorage.setItem('currency', c);
+    setCurrencyState(c);
+  };
 
   // Refresh all data for the current room
   const refreshData = useCallback(async () => {
@@ -174,12 +183,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ]);
 
       setMeals(mealsData || []);
-      setTasks(tasksData || []);
+      setTasks((tasksData as Task[]) || []);
       setExpenses(expensesData || []);
       setBills(billsData || []);
       setPersonnel(personnelData || []);
       setAttendance(attendanceData || []);
-      setPayments(paymentsData || []);
+      setPayments((paymentsData as Payment[]) || []);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
@@ -195,6 +204,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         
         if (sessionUser) {
           setUser(sessionUser);
+          
+          if (sessionUser.currency) {
+            setCurrencyState(sessionUser.currency);
+            localStorage.setItem('currency', sessionUser.currency);
+          }
           
           // If user has a room, fetch it
           if (sessionUser.roomId) {
@@ -281,6 +295,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         logout,
         refreshData,
         loading,
+        currency,
+        setCurrency,
       }}
     >
       {children}

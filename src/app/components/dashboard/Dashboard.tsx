@@ -1,10 +1,13 @@
 import { useApp } from '../../context/AppContext';
-import { UtensilsCrossed, CheckSquare, AlertCircle, DollarSign, Users } from 'lucide-react';
+import { UtensilsCrossed, CheckSquare, AlertCircle, DollarSign, Euro, PoundSterling, IndianRupee, Users } from 'lucide-react';
 import { useNavigate } from 'react-router';
 
 export const Dashboard = () => {
-  const { currentRoom, meals, tasks, bills, expenses, personnel, attendance } = useApp();
+  const { currentRoom, meals, tasks, bills, expenses, personnel, attendance, currency } = useApp();
   const navigate = useNavigate();
+  
+  const CurrencyIcon = currency === 'EUR' ? Euro : currency === 'GBP' ? PoundSterling : currency === 'INR' ? IndianRupee : DollarSign;
+  const currencySymbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : '$';
 
   if (!currentRoom) {
     return (
@@ -58,7 +61,10 @@ export const Dashboard = () => {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-indigo-500">
+        <div 
+          onClick={() => navigate('/app/room')}
+          className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-indigo-500 cursor-pointer hover:bg-indigo-50 transition-all hover:-translate-y-1 hover:shadow-md group"
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Members</p>
@@ -68,7 +74,10 @@ export const Dashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500">
+        <div 
+          onClick={() => navigate('/app/tasks')}
+          className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500 cursor-pointer hover:bg-green-50 transition-all hover:-translate-y-1 hover:shadow-md group"
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Today's Tasks</p>
@@ -78,7 +87,10 @@ export const Dashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-red-500">
+        <div 
+          onClick={() => navigate('/app/bills')}
+          className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-red-500 cursor-pointer hover:bg-red-50 transition-all hover:-translate-y-1 hover:shadow-md group"
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Pending Bills</p>
@@ -88,13 +100,16 @@ export const Dashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-yellow-500">
+        <div 
+          onClick={() => navigate('/app/expenses')}
+          className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-yellow-500 cursor-pointer hover:bg-yellow-50 transition-all hover:-translate-y-1 hover:shadow-md group"
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Month Expenses</p>
-              <p className="text-2xl font-bold text-gray-900">₹{totalExpenses}</p>
+              <p className="text-2xl font-bold text-gray-900">{currencySymbol}{totalExpenses}</p>
             </div>
-            <DollarSign className="h-10 w-10 text-yellow-500" />
+            <CurrencyIcon className="h-10 w-10 text-yellow-500" />
           </div>
         </div>
       </div>
@@ -167,7 +182,7 @@ export const Dashboard = () => {
                   <p className="font-medium text-gray-900">{bill.name}</p>
                   <p className="text-sm text-gray-600">Due: {new Date(bill.dueDate).toLocaleDateString()}</p>
                 </div>
-                <p className="font-bold text-gray-900">₹{bill.amount}</p>
+                <p className="font-bold text-gray-900">{currencySymbol}{bill.amount}</p>
               </div>
             ))}
           </div>

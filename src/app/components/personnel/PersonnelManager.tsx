@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Briefcase, Plus, Edit2, Trash2, Calendar, DollarSign, Users } from 'lucide-react';
+import { Briefcase, Plus, Edit2, Trash2, Calendar, DollarSign, Euro, PoundSterling, IndianRupee, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { personnelAPI, attendanceAPI, paymentAPI } from '../../services/api';
 
 export const PersonnelManager = () => {
-  const { currentRoom, personnel, attendance, payments, refreshData } = useApp();
+  const { currentRoom, personnel, attendance, payments, refreshData, currency } = useApp();
+  
+  const CurrencyIcon = currency === 'EUR' ? Euro : currency === 'GBP' ? PoundSterling : currency === 'INR' ? IndianRupee : DollarSign;
+  const currencySymbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : '$';
+
   const [view, setView] = useState<'list' | 'attendance' | 'payment'>('list');
   const [showAddPersonnel, setShowAddPersonnel] = useState(false);
   const [showAttendance, setShowAttendance] = useState(false);
@@ -253,7 +257,7 @@ export const PersonnelManager = () => {
               : 'bg-white text-gray-700 hover:bg-gray-50'
           }`}
         >
-          <DollarSign className="h-5 w-5 inline mr-2" />
+          <CurrencyIcon className="h-5 w-5 inline mr-2" />
           Payments
         </button>
       </div>
@@ -280,7 +284,7 @@ export const PersonnelManager = () => {
                       <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <p className="text-sm text-gray-600">Monthly Salary</p>
-                          <p className="text-lg font-bold text-gray-900">₹{person.monthlyCompensation}</p>
+                          <p className="text-lg font-bold text-gray-900">{currencySymbol}{person.monthlyCompensation}</p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-600">Present Days (This Month)</p>

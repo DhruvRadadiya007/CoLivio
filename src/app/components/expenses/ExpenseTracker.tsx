@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { DollarSign, Plus, Edit2, Trash2, Calendar, TrendingUp } from 'lucide-react';
+import { DollarSign, Euro, PoundSterling, IndianRupee, Plus, Edit2, Trash2, Calendar, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { expenseAPI } from '../../services/api';
 
 export const ExpenseTracker = () => {
-  const { currentRoom, expenses, refreshData } = useApp();
+  const { currentRoom, expenses, refreshData, currency } = useApp();
+  
+  const CurrencyIcon = currency === 'EUR' ? Euro : currency === 'GBP' ? PoundSterling : currency === 'INR' ? IndianRupee : DollarSign;
+  const currencySymbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : '$';
+
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [editingExpense, setEditingExpense] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -111,7 +115,7 @@ export const ExpenseTracker = () => {
   if (!currentRoom) {
     return (
       <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-        <DollarSign className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+        <CurrencyIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
         <h2 className="text-2xl font-bold text-gray-900 mb-2">No Room Selected</h2>
         <p className="text-gray-600">Please create or join a room first</p>
       </div>
@@ -175,7 +179,7 @@ export const ExpenseTracker = () => {
             <TrendingUp className="h-5 w-5 text-indigo-600" />
             <h3 className="font-semibold text-gray-700">Total Expenses</h3>
           </div>
-          <p className="text-3xl font-bold text-gray-900">₹{totalExpenses.toFixed(2)}</p>
+          <p className="text-3xl font-bold text-gray-900">{currencySymbol}{totalExpenses.toFixed(2)}</p>
           <p className="text-sm text-gray-600 mt-1">All time</p>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-6">
@@ -183,7 +187,7 @@ export const ExpenseTracker = () => {
             <Calendar className="h-5 w-5 text-green-600" />
             <h3 className="font-semibold text-gray-700">This Month</h3>
           </div>
-          <p className="text-3xl font-bold text-gray-900">₹{monthlyTotal.toFixed(2)}</p>
+          <p className="text-3xl font-bold text-gray-900">{currencySymbol}{monthlyTotal.toFixed(2)}</p>
           <p className="text-sm text-gray-600 mt-1">{monthlyExpenses.length} expenses</p>
         </div>
       </div>
@@ -197,12 +201,12 @@ export const ExpenseTracker = () => {
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-medium text-gray-900">{member.name}</h3>
                 <span className={`font-bold ${balance > 0 ? 'text-green-600' : balance < 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                  {balance > 0 ? '+' : ''}₹{balance.toFixed(2)}
+                  {balance > 0 ? '+' : ''}{currencySymbol}{balance.toFixed(2)}
                 </span>
               </div>
               <div className="flex gap-4 text-sm text-gray-600">
-                <span>Paid: ₹{paid.toFixed(2)}</span>
-                <span>Owes: ₹{owes.toFixed(2)}</span>
+                <span>Paid: {currencySymbol}{paid.toFixed(2)}</span>
+                <span>Owes: {currencySymbol}{owes.toFixed(2)}</span>
               </div>
             </div>
           ))}
@@ -223,11 +227,11 @@ export const ExpenseTracker = () => {
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-medium text-gray-900">{expense.title}</h3>
-                        <span className="text-xl font-bold text-gray-900">₹{expense.amount.toFixed(2)}</span>
+                        <span className="text-xl font-bold text-gray-900">{currencySymbol}{expense.amount.toFixed(2)}</span>
                       </div>
                       <div className="text-sm text-gray-600 space-y-1">
                         <p>Paid by: {payer?.name || 'Unknown'}</p>
-                        <p>Split among: {expense.splitAmong.length} member(s) (₹{splitPerPerson.toFixed(2)} each)</p>
+                        <p>Split among: {expense.splitAmong.length} member(s) ({currencySymbol}{splitPerPerson.toFixed(2)} each)</p>
                         <p className="flex items-center gap-1">
                           <Calendar className="h-4 w-4" />
                           {new Date(expense.date).toLocaleDateString()}
@@ -278,7 +282,7 @@ export const ExpenseTracker = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Amount (₹)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Amount ({currencySymbol})</label>
                 <input
                   type="number"
                   value={amount}

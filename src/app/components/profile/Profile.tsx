@@ -5,14 +5,15 @@ import { User, Mail, Camera, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 export const Profile = () => {
-  const { user, setUser, currentRoom } = useApp();
+  const { user, setUser, currentRoom, currency, setCurrency } = useApp();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user?.name || '');
+  const [loading, setLoading] = useState(false);
 
   const handleSave = async () => {
     if (user) {
       try {
-        await authAPI.updateUser(name);
+        await authAPI.updateUser({ name });
         
         const updatedUser = { ...user, name };
         setUser(updatedUser);
@@ -104,6 +105,30 @@ export const Profile = () => {
                     {userRole ? userRole.charAt(0).toUpperCase() + userRole.slice(1) : ''}
                   </span>
                 </div>
+              </div>
+
+              <div className="pt-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Currency Display Preference</label>
+                <select
+                  value={currency}
+                  onChange={async (e) => {
+                    const newCurrency = e.target.value;
+                    setCurrency(newCurrency);
+                    try {
+                      await authAPI.updateUser({ currency: newCurrency });
+                      toast.success('Currency preference saved!');
+                    } catch (error) {
+                      toast.error('Failed to save currency');
+                    }
+                  }}
+                  className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                >
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="GBP">GBP (£)</option>
+                  <option value="INR">INR (₹)</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Changes the currency symbol across the app.</p>
               </div>
             </>
           )}

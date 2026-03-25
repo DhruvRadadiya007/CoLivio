@@ -47,6 +47,7 @@ export const authAPI = {
         id: data.user.id,
         email: data.user.email!,
         name: data.user.user_metadata?.name || '',
+        currency: data.user.user_metadata?.currency || 'USD',
         roomId: rm?.room_id || null,
       },
     };
@@ -63,6 +64,7 @@ export const authAPI = {
         id: user.id,
         email: user.email!,
         name: user.user_metadata?.name || '',
+        currency: user.user_metadata?.currency || 'USD',
         roomId: rm?.room_id || null,
       },
     };
@@ -73,19 +75,25 @@ export const authAPI = {
     setAccessToken(null);
   },
 
-  async updateUser(name: string) {
+  async updateUser(updates: { name?: string; currency?: string }) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
+    const metaUpdates: any = {};
+    if (updates.name !== undefined) metaUpdates.name = updates.name;
+    if (updates.currency !== undefined) metaUpdates.currency = updates.currency;
+
     const { error: authError } = await supabase.auth.updateUser({
-      data: { name }
+      data: metaUpdates
     });
     if (authError) throw authError;
 
     // Try to update name in room_members as well
-    await supabase.from('room_members').update({ name }).eq('user_id', user.id);
+    if (updates.name !== undefined) {
+      await supabase.from('room_members').update({ name: updates.name }).eq('user_id', user.id);
+    }
     
-    return name;
+    return updates;
   },
 };
 

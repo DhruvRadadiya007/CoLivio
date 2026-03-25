@@ -5,7 +5,9 @@ import { toast } from 'sonner';
 import { billAPI } from '../../services/api';
 
 export const BillManager = () => {
-  const { currentRoom, bills, refreshData } = useApp();
+  const { currentRoom, bills, refreshData, currency } = useApp();
+  const currencySymbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : '$';
+  
   const [showAddBill, setShowAddBill] = useState(false);
   const [editingBill, setEditingBill] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -177,7 +179,7 @@ export const BillManager = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <p className="text-sm text-gray-600 mb-1">Total Pending</p>
-            <p className="text-2xl font-bold text-red-600">₹{totalPending.toFixed(2)}</p>
+            <p className="text-2xl font-bold text-red-600">{currencySymbol}{totalPending.toFixed(2)}</p>
           </div>
           <div>
             <p className="text-sm text-gray-600 mb-1">Pending Bills</p>
@@ -210,7 +212,7 @@ export const BillManager = () => {
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-medium text-gray-900">{bill.name}</h3>
-                        <span className="text-xl font-bold text-gray-900">₹{bill.amount.toFixed(2)}</span>
+                        <span className="text-xl font-bold text-gray-900">{currencySymbol}{bill.amount.toFixed(2)}</span>
                       </div>
                       <div className="flex flex-wrap gap-3 text-sm">
                         <span className={`flex items-center gap-1 ${
@@ -335,7 +337,7 @@ export const BillManager = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Amount (₹)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Amount ({currencySymbol})</label>
                 <input
                   type="number"
                   value={amount}
