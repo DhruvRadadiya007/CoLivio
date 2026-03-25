@@ -2,69 +2,101 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Receipt, Plus, Edit2, Trash2, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { billAPI } from '../../services/api';
 
 export const BillManager = () => {
-  const { currentRoom, bills, setBills } = useApp();
+  const { currentRoom, bills, refreshData } = useApp();
   const [showAddBill, setShowAddBill] = useState(false);
   const [editingBill, setEditingBill] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [recurring, setRecurring] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleAddBill = () => {
+  const handleAddBill = async () => {
     if (!currentRoom || !name.trim() || !amount || !dueDate) {
       toast.error('Please fill all fields');
       return;
     }
 
-    const newBill = {
-      id: Date.now().toString(),
-      name,
-      amount: parseFloat(amount),
-      dueDate,
-      recurring,
-      status: 'pending' as const,
-      roomId: currentRoom.id,
-    };
+    setLoading(true);
+    try {
+      await billAPI.createBill({
+        name,
+        amount: parseFloat(amount),
+        dueDate,
+        recurring,
+        status: 'pending',
+        roomId: currentRoom.id,
+      });
 
-    setBills([...bills, newBill]);
-    setShowAddBill(false);
-    resetForm();
-    toast.success('Bill added successfully!');
+      await refreshData();
+      setShowAddBill(false);
+      resetForm();
+      toast.success('Bill added successfully!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to add bill');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleUpdateBill = () => {
-    if (!editingBill || !name.trim() || !amount || !dueDate) return;
+  const handleUpdateBill = async () => {
+    if (!currentRoom || !editingBill || !name.trim() || !amount || !dueDate) return;
 
-    const updatedBills = bills.map(b =>
-      b.id === editingBill
-        ? { ...b, name, amount: parseFloat(amount), dueDate, recurring }
-        : b
-    );
+    setLoading(true);
+    try {
+      await billAPI.updateBill(currentRoom.id, editingBill, {
+        name,
+        amount: parseFloat(amount),
+        dueDate,
+        recurring
+      });
 
-    setBills(updatedBills);
-    setEditingBill(null);
-    setShowAddBill(false);
-    resetForm();
-    toast.success('Bill updated successfully!');
+      await refreshData();
+      setEditingBill(null);
+      setShowAddBill(false);
+      resetForm();
+      toast.success('Bill updated successfully!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update bill');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleToggleStatus = (billId: string) => {
-    const updatedBills = bills.map(b =>
-      b.id === billId
-        ? { ...b, status: b.status === 'pending' ? 'paid' as const : 'pending' as const }
-        : b
-    );
-    setBills(updatedBills);
+  const handleToggleStatus = async (billId: string) => {
+    if (!currentRoom) return;
+    
     const bill = bills.find(b => b.id === billId);
-    toast.success(bill?.status === 'pending' ? 'Bill marked as paid!' : 'Bill marked as pending');
+    if (!bill) return;
+
+    setLoading(true);
+    try {
+      const newStatus = bill.status === 'pending' ? 'paid' : 'pending';
+      await billAPI.updateBill(currentRoom.id, billId, { status: newStatus });
+      await refreshData();
+      toast.success(`Bill marked as ${newStatus}!`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update bill status');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDeleteBill = (billId: string) => {
-    const updatedBills = bills.filter(b => b.id !== billId);
-    setBills(updatedBills);
-    toast.success('Bill deleted!');
+  const handleDeleteBill = async (billId: string) => {
+    if (!currentRoom) return;
+    setLoading(true);
+    try {
+      await billAPI.deleteBill(currentRoom.id, billId);
+      await refreshData();
+      toast.success('Bill deleted!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete bill');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const startEdit = (bill: any) => {
@@ -199,7 +231,8 @@ export const BillManager = () => {
                     <div className="flex gap-1">
                       <button
                         onClick={() => handleToggleStatus(bill.id)}
-                        className="p-2 hover:bg-green-100 rounded-lg transition-colors"
+                        disabled={loading}
+                        className="p-2 hover:bg-green-100 rounded-lg transition-colors disabled:opacity-50"
                         title="Mark as paid"
                       >
                         <CheckCircle className="h-5 w-5 text-green-600" />
@@ -212,7 +245,8 @@ export const BillManager = () => {
                       </button>
                       <button
                         onClick={() => handleDeleteBill(bill.id)}
-                        className="p-2 hover:bg-red-100 rounded-lg transition-colors"
+                        disabled={loading}
+                        className="p-2 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
                       >
                         <Trash2 className="h-4 w-4 text-red-600" />
                       </button>
@@ -257,14 +291,16 @@ export const BillManager = () => {
                   <div className="flex gap-1">
                     <button
                       onClick={() => handleToggleStatus(bill.id)}
-                      className="p-2 hover:bg-yellow-100 rounded-lg transition-colors"
+                      disabled={loading}
+                      className="p-2 hover:bg-yellow-100 rounded-lg transition-colors disabled:opacity-50"
                       title="Mark as pending"
                     >
                       <AlertCircle className="h-5 w-5 text-yellow-600" />
                     </button>
                     <button
                       onClick={() => handleDeleteBill(bill.id)}
-                      className="p-2 hover:bg-red-100 rounded-lg transition-colors"
+                      disabled={loading}
+                      className="p-2 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
                     >
                       <Trash2 className="h-4 w-4 text-red-600" />
                     </button>
@@ -332,9 +368,10 @@ export const BillManager = () => {
               <div className="flex gap-3">
                 <button
                   onClick={editingBill ? handleUpdateBill : handleAddBill}
-                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  {editingBill ? 'Update' : 'Add'} Bill
+                  {loading ? 'Saving...' : (editingBill ? 'Update Bill' : 'Add Bill')}
                 </button>
                 <button
                   onClick={() => {

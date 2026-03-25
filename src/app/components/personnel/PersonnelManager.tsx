@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Briefcase, Plus, Edit2, Trash2, Calendar, DollarSign, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { personnelAPI, attendanceAPI, paymentAPI } from '../../services/api';
 
 export const PersonnelManager = () => {
-  const { currentRoom, personnel, setPersonnel, attendance, setAttendance, payments, setPayments } = useApp();
+  const { currentRoom, personnel, attendance, payments, refreshData } = useApp();
   const [view, setView] = useState<'list' | 'attendance' | 'payment'>('list');
   const [showAddPersonnel, setShowAddPersonnel] = useState(false);
   const [showAttendance, setShowAttendance] = useState(false);
@@ -17,81 +18,108 @@ export const PersonnelManager = () => {
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'leave'>('present');
   const [leaveReason, setLeaveReason] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleAddPersonnel = () => {
+  const handleAddPersonnel = async () => {
     if (!currentRoom || !name.trim() || !role.trim() || !monthlyCompensation) {
       toast.error('Please fill all fields');
       return;
     }
 
-    const newPersonnel = {
-      id: Date.now().toString(),
-      name,
-      role,
-      monthlyCompensation: parseFloat(monthlyCompensation),
-      roomId: currentRoom.id,
-    };
+    setLoading(true);
+    try {
+      await personnelAPI.createPersonnel({
+        name,
+        role,
+        monthlyCompensation: parseFloat(monthlyCompensation),
+        roomId: currentRoom.id,
+      });
 
-    setPersonnel([...personnel, newPersonnel]);
-    setShowAddPersonnel(false);
-    resetForm();
-    toast.success('Personnel added successfully!');
+      await refreshData();
+      setShowAddPersonnel(false);
+      resetForm();
+      toast.success('Personnel added successfully!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to add personnel');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleUpdatePersonnel = () => {
-    if (!editingPersonnel || !name.trim() || !role.trim() || !monthlyCompensation) return;
+  const handleUpdatePersonnel = async () => {
+    if (!currentRoom || !editingPersonnel || !name.trim() || !role.trim() || !monthlyCompensation) return;
 
-    const updatedPersonnel = personnel.map(p =>
-      p.id === editingPersonnel
-        ? { ...p, name, role, monthlyCompensation: parseFloat(monthlyCompensation) }
-        : p
-    );
+    setLoading(true);
+    try {
+      await personnelAPI.updatePersonnel(currentRoom.id, editingPersonnel, {
+        name,
+        role,
+        monthlyCompensation: parseFloat(monthlyCompensation)
+      });
 
-    setPersonnel(updatedPersonnel);
-    setEditingPersonnel(null);
-    setShowAddPersonnel(false);
-    resetForm();
-    toast.success('Personnel updated successfully!');
+      await refreshData();
+      setEditingPersonnel(null);
+      setShowAddPersonnel(false);
+      resetForm();
+      toast.success('Personnel updated successfully!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update personnel');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDeletePersonnel = (personnelId: string) => {
-    const updatedPersonnel = personnel.filter(p => p.id !== personnelId);
-    setPersonnel(updatedPersonnel);
-    toast.success('Personnel removed!');
+  const handleDeletePersonnel = async (personnelId: string) => {
+    if (!currentRoom) return;
+    setLoading(true);
+    try {
+      await personnelAPI.deletePersonnel(currentRoom.id, personnelId);
+      await refreshData();
+      toast.success('Personnel removed!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete personnel');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleMarkAttendance = () => {
+  const handleMarkAttendance = async () => {
     if (!currentRoom || !selectedPersonnel) {
       toast.error('Please select personnel');
       return;
     }
 
-    // Check if attendance already exists for this date
     const existingAttendance = attendance.find(
       a => a.personnelId === selectedPersonnel && a.date === attendanceDate && a.roomId === currentRoom.id
     );
 
     if (existingAttendance) {
-      toast.error('Attendance already marked for this date');
+      toast.error('Attendance already marked for this date. Check database features for updates.');
       return;
     }
 
-    const newAttendance = {
-      id: Date.now().toString(),
-      personnelId: selectedPersonnel,
-      date: attendanceDate,
-      status: attendanceStatus,
-      leaveReason: attendanceStatus === 'leave' ? leaveReason : undefined,
-      roomId: currentRoom.id,
-    };
+    setLoading(true);
+    try {
+      await attendanceAPI.saveAttendance({
+        personnelId: selectedPersonnel,
+        date: attendanceDate,
+        status: attendanceStatus,
+        leaveReason: attendanceStatus === 'leave' ? leaveReason : undefined,
+        roomId: currentRoom.id,
+      });
 
-    setAttendance([...attendance, newAttendance]);
-    setShowAttendance(false);
-    resetAttendanceForm();
-    toast.success('Attendance marked successfully!');
+      await refreshData();
+      setShowAttendance(false);
+      resetAttendanceForm();
+      toast.success('Attendance marked successfully!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to mark attendance');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleMarkPayment = (personnelId: string) => {
+  const handleMarkPayment = async (personnelId: string) => {
     if (!currentRoom) return;
 
     const person = personnel.find(p => p.id === personnelId);
@@ -102,27 +130,27 @@ export const PersonnelManager = () => {
       p => p.personnelId === personnelId && p.month === currentMonth && p.roomId === currentRoom.id
     );
 
-    if (existingPayment) {
-      // Toggle payment status
-      const updatedPayments = payments.map(p =>
-        p.id === existingPayment.id
-          ? { ...p, status: p.status === 'paid' ? 'pending' as const : 'paid' as const }
-          : p
-      );
-      setPayments(updatedPayments);
-      toast.success(`Payment marked as ${existingPayment.status === 'paid' ? 'pending' : 'paid'}`);
-    } else {
-      // Create new payment
-      const newPayment = {
-        id: Date.now().toString(),
-        personnelId,
-        month: currentMonth,
-        amount: person.monthlyCompensation,
-        status: 'paid' as const,
-        roomId: currentRoom.id,
-      };
-      setPayments([...payments, newPayment]);
-      toast.success('Payment marked as paid!');
+    setLoading(true);
+    try {
+      if (existingPayment) {
+        // Technically we need to implement unmarking payments or deleting them in DB
+        // assuming updatePayment with 'pending' means deleting it
+        toast.error('Cannot unmark payment dynamically yet. Delete not fully implemented.');
+      } else {
+        await paymentAPI.savePayment({
+          personnelId,
+          month: currentMonth,
+          amount: person.monthlyCompensation,
+          roomId: currentRoom.id,
+        });
+
+        await refreshData();
+        toast.success('Payment marked as paid!');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to mark payment');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -279,7 +307,8 @@ export const PersonnelManager = () => {
                       </button>
                       <button
                         onClick={() => handleDeletePersonnel(person.id)}
-                        className="p-2 hover:bg-red-100 rounded-lg transition-colors"
+                        disabled={loading}
+                        className="p-2 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
                       >
                         <Trash2 className="h-5 w-5 text-red-600" />
                       </button>
@@ -367,7 +396,8 @@ export const PersonnelManager = () => {
                     </span>
                     <button
                       onClick={() => handleMarkPayment(person.id)}
-                      className={`px-4 py-2 rounded-lg font-medium ${
+                      disabled={loading}
+                      className={`px-4 py-2 rounded-lg font-medium disabled:opacity-50 ${
                         monthPayment?.status === 'paid'
                           ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
                           : 'bg-green-600 text-white hover:bg-green-700'
@@ -425,9 +455,10 @@ export const PersonnelManager = () => {
               <div className="flex gap-3">
                 <button
                   onClick={editingPersonnel ? handleUpdatePersonnel : handleAddPersonnel}
-                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  {editingPersonnel ? 'Update' : 'Add'} Personnel
+                  {loading ? 'Saving...' : (editingPersonnel ? 'Update Personnel' : 'Add Personnel')}
                 </button>
                 <button
                   onClick={() => {
@@ -502,9 +533,10 @@ export const PersonnelManager = () => {
               <div className="flex gap-3">
                 <button
                   onClick={handleMarkAttendance}
-                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  Mark Attendance
+                  {loading ? 'Saving...' : 'Mark Attendance'}
                 </button>
                 <button
                   onClick={() => {

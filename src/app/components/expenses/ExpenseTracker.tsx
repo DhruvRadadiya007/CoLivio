@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DollarSign, Plus, Edit2, Trash2, Calendar, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
+import { expenseAPI } from '../../services/api';
 
 export const ExpenseTracker = () => {
-  const { currentRoom, expenses, setExpenses } = useApp();
+  const { currentRoom, expenses, refreshData } = useApp();
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [editingExpense, setEditingExpense] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -12,49 +13,73 @@ export const ExpenseTracker = () => {
   const [paidBy, setPaidBy] = useState('');
   const [splitAmong, setSplitAmong] = useState<string[]>([]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [loading, setLoading] = useState(false);
 
-  const handleAddExpense = () => {
+  const handleAddExpense = async () => {
     if (!currentRoom || !title.trim() || !amount || !paidBy || splitAmong.length === 0) {
       toast.error('Please fill all fields');
       return;
     }
 
-    const newExpense = {
-      id: Date.now().toString(),
-      title,
-      amount: parseFloat(amount),
-      paidBy,
-      splitAmong,
-      date,
-      roomId: currentRoom.id,
-    };
+    setLoading(true);
+    try {
+      await expenseAPI.createExpense({
+        title,
+        amount: parseFloat(amount),
+        paidBy,
+        splitAmong,
+        date,
+        roomId: currentRoom.id,
+      });
 
-    setExpenses([...expenses, newExpense]);
-    setShowAddExpense(false);
-    resetForm();
-    toast.success('Expense added successfully!');
+      await refreshData();
+      setShowAddExpense(false);
+      resetForm();
+      toast.success('Expense added successfully!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to add expense');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleUpdateExpense = () => {
-    if (!editingExpense || !title.trim() || !amount || !paidBy || splitAmong.length === 0) return;
+  const handleUpdateExpense = async () => {
+    if (!currentRoom || !editingExpense || !title.trim() || !amount || !paidBy || splitAmong.length === 0) return;
 
-    const updatedExpenses = expenses.map(e =>
-      e.id === editingExpense
-        ? { ...e, title, amount: parseFloat(amount), paidBy, splitAmong, date }
-        : e
-    );
+    setLoading(true);
+    try {
+      await expenseAPI.updateExpense(currentRoom.id, editingExpense, {
+        title,
+        amount: parseFloat(amount),
+        paidBy,
+        splitAmong,
+        date
+      });
 
-    setExpenses(updatedExpenses);
-    setEditingExpense(null);
-    setShowAddExpense(false);
-    resetForm();
-    toast.success('Expense updated successfully!');
+      await refreshData();
+      setEditingExpense(null);
+      setShowAddExpense(false);
+      resetForm();
+      toast.success('Expense updated successfully!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update expense');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDeleteExpense = (expenseId: string) => {
-    const updatedExpenses = expenses.filter(e => e.id !== expenseId);
-    setExpenses(updatedExpenses);
-    toast.success('Expense deleted!');
+  const handleDeleteExpense = async (expenseId: string) => {
+    if (!currentRoom) return;
+    setLoading(true);
+    try {
+      await expenseAPI.deleteExpense(currentRoom.id, expenseId);
+      await refreshData();
+      toast.success('Expense deleted!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete expense');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const startEdit = (expense: any) => {
@@ -218,7 +243,8 @@ export const ExpenseTracker = () => {
                       </button>
                       <button
                         onClick={() => handleDeleteExpense(expense.id)}
-                        className="p-2 hover:bg-red-100 rounded-lg transition-colors"
+                        disabled={loading}
+                        className="p-2 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
                       >
                         <Trash2 className="h-4 w-4 text-red-600" />
                       </button>
@@ -305,9 +331,10 @@ export const ExpenseTracker = () => {
               <div className="flex gap-3">
                 <button
                   onClick={editingExpense ? handleUpdateExpense : handleAddExpense}
-                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  {editingExpense ? 'Update' : 'Add'} Expense
+                  {loading ? 'Saving...' : (editingExpense ? 'Update Expense' : 'Add Expense')}
                 </button>
                 <button
                   onClick={() => {
