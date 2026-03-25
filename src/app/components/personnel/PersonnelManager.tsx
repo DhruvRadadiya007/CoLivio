@@ -1,0 +1,525 @@
+import { useState } from 'react';
+import { useApp } from '../../context/AppContext';
+import { Briefcase, Plus, Edit2, Trash2, Calendar, DollarSign, Users } from 'lucide-react';
+import { toast } from 'sonner';
+
+export const PersonnelManager = () => {
+  const { currentRoom, personnel, setPersonnel, attendance, setAttendance, payments, setPayments } = useApp();
+  const [view, setView] = useState<'list' | 'attendance' | 'payment'>('list');
+  const [showAddPersonnel, setShowAddPersonnel] = useState(false);
+  const [showAttendance, setShowAttendance] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [editingPersonnel, setEditingPersonnel] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('');
+  const [monthlyCompensation, setMonthlyCompensation] = useState('');
+  const [selectedPersonnel, setSelectedPersonnel] = useState<string | null>(null);
+  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'leave'>('present');
+  const [leaveReason, setLeaveReason] = useState('');
+
+  const handleAddPersonnel = () => {
+    if (!currentRoom || !name.trim() || !role.trim() || !monthlyCompensation) {
+      toast.error('Please fill all fields');
+      return;
+    }
+
+    const newPersonnel = {
+      id: Date.now().toString(),
+      name,
+      role,
+      monthlyCompensation: parseFloat(monthlyCompensation),
+      roomId: currentRoom.id,
+    };
+
+    setPersonnel([...personnel, newPersonnel]);
+    setShowAddPersonnel(false);
+    resetForm();
+    toast.success('Personnel added successfully!');
+  };
+
+  const handleUpdatePersonnel = () => {
+    if (!editingPersonnel || !name.trim() || !role.trim() || !monthlyCompensation) return;
+
+    const updatedPersonnel = personnel.map(p =>
+      p.id === editingPersonnel
+        ? { ...p, name, role, monthlyCompensation: parseFloat(monthlyCompensation) }
+        : p
+    );
+
+    setPersonnel(updatedPersonnel);
+    setEditingPersonnel(null);
+    setShowAddPersonnel(false);
+    resetForm();
+    toast.success('Personnel updated successfully!');
+  };
+
+  const handleDeletePersonnel = (personnelId: string) => {
+    const updatedPersonnel = personnel.filter(p => p.id !== personnelId);
+    setPersonnel(updatedPersonnel);
+    toast.success('Personnel removed!');
+  };
+
+  const handleMarkAttendance = () => {
+    if (!currentRoom || !selectedPersonnel) {
+      toast.error('Please select personnel');
+      return;
+    }
+
+    // Check if attendance already exists for this date
+    const existingAttendance = attendance.find(
+      a => a.personnelId === selectedPersonnel && a.date === attendanceDate && a.roomId === currentRoom.id
+    );
+
+    if (existingAttendance) {
+      toast.error('Attendance already marked for this date');
+      return;
+    }
+
+    const newAttendance = {
+      id: Date.now().toString(),
+      personnelId: selectedPersonnel,
+      date: attendanceDate,
+      status: attendanceStatus,
+      leaveReason: attendanceStatus === 'leave' ? leaveReason : undefined,
+      roomId: currentRoom.id,
+    };
+
+    setAttendance([...attendance, newAttendance]);
+    setShowAttendance(false);
+    resetAttendanceForm();
+    toast.success('Attendance marked successfully!');
+  };
+
+  const handleMarkPayment = (personnelId: string) => {
+    if (!currentRoom) return;
+
+    const person = personnel.find(p => p.id === personnelId);
+    if (!person) return;
+
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const existingPayment = payments.find(
+      p => p.personnelId === personnelId && p.month === currentMonth && p.roomId === currentRoom.id
+    );
+
+    if (existingPayment) {
+      // Toggle payment status
+      const updatedPayments = payments.map(p =>
+        p.id === existingPayment.id
+          ? { ...p, status: p.status === 'paid' ? 'pending' as const : 'paid' as const }
+          : p
+      );
+      setPayments(updatedPayments);
+      toast.success(`Payment marked as ${existingPayment.status === 'paid' ? 'pending' : 'paid'}`);
+    } else {
+      // Create new payment
+      const newPayment = {
+        id: Date.now().toString(),
+        personnelId,
+        month: currentMonth,
+        amount: person.monthlyCompensation,
+        status: 'paid' as const,
+        roomId: currentRoom.id,
+      };
+      setPayments([...payments, newPayment]);
+      toast.success('Payment marked as paid!');
+    }
+  };
+
+  const startEdit = (person: any) => {
+    setEditingPersonnel(person.id);
+    setName(person.name);
+    setRole(person.role);
+    setMonthlyCompensation(person.monthlyCompensation.toString());
+    setShowAddPersonnel(true);
+  };
+
+  const resetForm = () => {
+    setName('');
+    setRole('');
+    setMonthlyCompensation('');
+  };
+
+  const resetAttendanceForm = () => {
+    setSelectedPersonnel(null);
+    setAttendanceDate(new Date().toISOString().split('T')[0]);
+    setAttendanceStatus('present');
+    setLeaveReason('');
+  };
+
+  if (!currentRoom) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm p-8 text-center">
+        <Briefcase className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">No Room Selected</h2>
+        <p className="text-gray-600">Please create or join a room first</p>
+      </div>
+    );
+  }
+
+  const roomPersonnel = personnel.filter(p => p.roomId === currentRoom.id);
+  const currentMonth = new Date().toISOString().slice(0, 7);
+
+  return (
+    <div className="pb-20 lg:pb-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Service Personnel</h1>
+          <p className="text-gray-600 mt-1">Manage service staff and attendance</p>
+        </div>
+        <div className="flex gap-2">
+          {view === 'list' && (
+            <button
+              onClick={() => {
+                setShowAddPersonnel(true);
+                setEditingPersonnel(null);
+                resetForm();
+              }}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+            >
+              <Plus className="h-5 w-5" />
+              <span className="hidden sm:inline">Add Personnel</span>
+            </button>
+          )}
+          {view === 'attendance' && (
+            <button
+              onClick={() => setShowAttendance(true)}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+            >
+              <Plus className="h-5 w-5" />
+              <span className="hidden sm:inline">Mark Attendance</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* View Tabs */}
+      <div className="flex gap-2 mb-6 overflow-x-auto">
+        <button
+          onClick={() => setView('list')}
+          className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap ${
+            view === 'list'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <Users className="h-5 w-5 inline mr-2" />
+          Personnel List
+        </button>
+        <button
+          onClick={() => setView('attendance')}
+          className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap ${
+            view === 'attendance'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <Calendar className="h-5 w-5 inline mr-2" />
+          Attendance
+        </button>
+        <button
+          onClick={() => setView('payment')}
+          className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap ${
+            view === 'payment'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <DollarSign className="h-5 w-5 inline mr-2" />
+          Payments
+        </button>
+      </div>
+
+      {/* Personnel List View */}
+      {view === 'list' && (
+        <div className="space-y-4">
+          {roomPersonnel.length > 0 ? (
+            roomPersonnel.map(person => {
+              const monthAttendance = attendance.filter(
+                a => a.personnelId === person.id && a.date.startsWith(currentMonth)
+              );
+              const presentDays = monthAttendance.filter(a => a.status === 'present').length;
+              const monthPayment = payments.find(
+                p => p.personnelId === person.id && p.month === currentMonth
+              );
+
+              return (
+                <div key={person.id} className="bg-white rounded-lg shadow-sm p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold text-gray-900">{person.name}</h3>
+                      <p className="text-gray-600 mt-1">{person.role}</p>
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">Monthly Salary</p>
+                          <p className="text-lg font-bold text-gray-900">₹{person.monthlyCompensation}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Present Days (This Month)</p>
+                          <p className="text-lg font-bold text-gray-900">{presentDays}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Payment Status</p>
+                          <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                            monthPayment?.status === 'paid'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {monthPayment?.status === 'paid' ? 'Paid' : 'Pending'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => startEdit(person)}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                      >
+                        <Edit2 className="h-5 w-5 text-gray-600" />
+                      </button>
+                      <button
+                        onClick={() => handleDeletePersonnel(person.id)}
+                        className="p-2 hover:bg-red-100 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="h-5 w-5 text-red-600" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="bg-white rounded-lg shadow-sm p-8 text-center">
+              <p className="text-gray-500">No service personnel added yet</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Attendance View */}
+      {view === 'attendance' && (
+        <div className="space-y-4">
+          {roomPersonnel.map(person => {
+            const personAttendance = attendance
+              .filter(a => a.personnelId === person.id && a.roomId === currentRoom.id)
+              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            return (
+              <div key={person.id} className="bg-white rounded-lg shadow-sm p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">{person.name} - {person.role}</h3>
+                {personAttendance.length > 0 ? (
+                  <div className="space-y-2">
+                    {personAttendance.slice(0, 10).map(att => (
+                      <div key={att.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <Calendar className="h-5 w-5 text-gray-400" />
+                          <span className="text-gray-900">{new Date(att.date).toLocaleDateString()}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            att.status === 'present'
+                              ? 'bg-green-100 text-green-800'
+                              : att.status === 'absent'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {att.status.charAt(0).toUpperCase() + att.status.slice(1)}
+                          </span>
+                          {att.leaveReason && (
+                            <span className="text-sm text-gray-600">({att.leaveReason})</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-4">No attendance records</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Payment View */}
+      {view === 'payment' && (
+        <div className="space-y-4">
+          {roomPersonnel.map(person => {
+            const monthPayment = payments.find(
+              p => p.personnelId === person.id && p.month === currentMonth && p.roomId === currentRoom.id
+            );
+
+            return (
+              <div key={person.id} className="bg-white rounded-lg shadow-sm p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">{person.name}</h3>
+                    <p className="text-gray-600">{person.role}</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-2">₹{person.monthlyCompensation}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={`px-4 py-2 rounded-full text-sm font-medium ${
+                      monthPayment?.status === 'paid'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {monthPayment?.status === 'paid' ? 'Paid' : 'Pending'}
+                    </span>
+                    <button
+                      onClick={() => handleMarkPayment(person.id)}
+                      className={`px-4 py-2 rounded-lg font-medium ${
+                        monthPayment?.status === 'paid'
+                          ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                    >
+                      {monthPayment?.status === 'paid' ? 'Mark as Pending' : 'Mark as Paid'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add/Edit Personnel Modal */}
+      {showAddPersonnel && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">
+              {editingPersonnel ? 'Edit Personnel' : 'Add Service Personnel'}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="John Doe"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
+                <input
+                  type="text"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="Cook, Cleaner, etc."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Monthly Compensation (₹)</label>
+                <input
+                  type="number"
+                  value={monthlyCompensation}
+                  onChange={(e) => setMonthlyCompensation(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="0.00"
+                  step="0.01"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={editingPersonnel ? handleUpdatePersonnel : handleAddPersonnel}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                >
+                  {editingPersonnel ? 'Update' : 'Add'} Personnel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAddPersonnel(false);
+                    setEditingPersonnel(null);
+                    resetForm();
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mark Attendance Modal */}
+      {showAttendance && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Mark Attendance</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Personnel</label>
+                <select
+                  value={selectedPersonnel || ''}
+                  onChange={(e) => setSelectedPersonnel(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="">Choose personnel</option>
+                  {roomPersonnel.map(person => (
+                    <option key={person.id} value={person.id}>
+                      {person.name} - {person.role}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+                <input
+                  type="date"
+                  value={attendanceDate}
+                  onChange={(e) => setAttendanceDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                <select
+                  value={attendanceStatus}
+                  onChange={(e) => setAttendanceStatus(e.target.value as any)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="present">Present</option>
+                  <option value="absent">Absent</option>
+                  <option value="leave">Leave</option>
+                </select>
+              </div>
+              {attendanceStatus === 'leave' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Leave Reason</label>
+                  <input
+                    type="text"
+                    value={leaveReason}
+                    onChange={(e) => setLeaveReason(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="Medical, Personal, etc."
+                  />
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleMarkAttendance}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                >
+                  Mark Attendance
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAttendance(false);
+                    resetAttendanceForm();
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
