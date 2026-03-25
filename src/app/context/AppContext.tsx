@@ -9,6 +9,7 @@ import {
   personnelAPI,
   attendanceAPI,
   paymentAPI,
+  expenseCategoryAPI,
   setAccessToken,
   getAccessToken,
 } from '../services/api';
@@ -58,10 +59,17 @@ export interface Task {
   createdAt: string;
 }
 
+export interface ExpenseCategory {
+  id: string;
+  roomId: string;
+  name: string;
+}
+
 export interface Expense {
   id: string;
   title: string;
   amount: number;
+  category: string;
   paidBy: string;
   splitAmong: string[];
   date: string;
@@ -115,6 +123,8 @@ interface AppContextType {
   setTasks: (tasks: Task[]) => void;
   expenses: Expense[];
   setExpenses: (expenses: Expense[]) => void;
+  expenseCategories: ExpenseCategory[];
+  setExpenseCategories: (categories: ExpenseCategory[]) => void;
   bills: Bill[];
   setBills: (bills: Bill[]) => void;
   personnel: Personnel[];
@@ -146,6 +156,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [meals, setMeals] = useState<Meal[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
@@ -168,6 +179,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         mealsData,
         tasksData,
         expensesData,
+        expenseCategoriesData,
         billsData,
         personnelData,
         attendanceData,
@@ -176,6 +188,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         mealAPI.getMeals(currentRoom.id),
         taskAPI.getTasks(currentRoom.id),
         expenseAPI.getExpenses(currentRoom.id),
+        expenseCategoryAPI.getCategories(currentRoom.id),
         billAPI.getBills(currentRoom.id),
         personnelAPI.getPersonnel(currentRoom.id),
         attendanceAPI.getAttendance(currentRoom.id),
@@ -185,6 +198,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setMeals(mealsData || []);
       setTasks((tasksData as Task[]) || []);
       setExpenses(expensesData || []);
+      setExpenseCategories(expenseCategoriesData || []);
       setBills(billsData || []);
       setPersonnel(personnelData || []);
       setAttendance(attendanceData || []);
@@ -244,6 +258,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setMeals([]);
       setTasks([]);
       setExpenses([]);
+      setExpenseCategories([]);
       setBills([]);
       setPersonnel([]);
       setAttendance([]);
@@ -263,6 +278,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setMeals([]);
       setTasks([]);
       setExpenses([]);
+      setExpenseCategories([]);
       setBills([]);
       setPersonnel([]);
       setAttendance([]);
@@ -284,6 +300,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setTasks,
         expenses,
         setExpenses,
+        expenseCategories,
+        setExpenseCategories,
         bills,
         setBills,
         personnel,

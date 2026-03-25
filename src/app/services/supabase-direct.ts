@@ -315,6 +315,7 @@ export const expenseAPI = {
       roomId: e.room_id,
       title: e.description,
       amount: e.amount,
+      category: e.category || 'General',
       paidBy: e.paid_by,
       splitAmong: e.split_details || [],
       date: e.date ? e.date.split('T')[0] : ''
@@ -326,7 +327,7 @@ export const expenseAPI = {
       room_id: expense.roomId,
       description: expense.title,
       amount: expense.amount,
-      category: 'General',
+      category: expense.category || 'General',
       paid_by: expense.paidBy,
       split_type: 'custom',
       split_details: expense.splitAmong,
@@ -340,6 +341,7 @@ export const expenseAPI = {
     let toUpdate: any = {};
     if (updates.title !== undefined) toUpdate.description = updates.title;
     if (updates.amount !== undefined) toUpdate.amount = updates.amount;
+    if (updates.category !== undefined) toUpdate.category = updates.category;
     if (updates.paidBy !== undefined) toUpdate.paid_by = updates.paidBy;
     if (updates.splitAmong !== undefined) toUpdate.split_details = updates.splitAmong;
     if (updates.date !== undefined) toUpdate.date = updates.date;
@@ -352,6 +354,38 @@ export const expenseAPI = {
   async deleteExpense(roomId: string, expenseId: string) {
     await supabase.from('expenses').delete().eq('id', expenseId).eq('room_id', roomId);
   },
+};
+
+// ==================== EXPENSE CATEGORY API ====================
+
+export const expenseCategoryAPI = {
+  async getCategories(roomId: string) {
+    const { data, error } = await supabase.from('expense_categories').select('*').eq('room_id', roomId);
+    if (error) {
+      // If table doesn't exist yet or other error, return empty array to prevent crashing
+      console.warn('Could not fetch categories:', error);
+      return [];
+    }
+    return data.map((c: any) => ({
+      id: c.id,
+      roomId: c.room_id,
+      name: c.name
+    }));
+  },
+
+  async createCategory(roomId: string, name: string) {
+    const { data, error } = await supabase.from('expense_categories').insert({
+      room_id: roomId,
+      name
+    }).select().single();
+    if (error) throw error;
+    return { id: data.id, roomId: data.room_id, name: data.name };
+  },
+
+  async deleteCategory(categoryId: string) {
+    const { error } = await supabase.from('expense_categories').delete().eq('id', categoryId);
+    if (error) throw error;
+  }
 };
 
 // ==================== BILL API ====================

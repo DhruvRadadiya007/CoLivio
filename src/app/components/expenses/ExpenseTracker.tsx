@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DollarSign, Euro, PoundSterling, IndianRupee, Plus, Edit2, Trash2, Calendar, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
-import { expenseAPI } from '../../services/api';
+import { expenseAPI, expenseCategoryAPI } from '../../services/api';
 
 export const ExpenseTracker = () => {
-  const { currentRoom, expenses, refreshData, currency } = useApp();
+  const { currentRoom, expenses, refreshData, currency, expenseCategories, user } = useApp();
+  
+  const isAdmin = currentRoom?.members.find((m) => m.userId === user?.id)?.role === 'admin';
   
   const CurrencyIcon = currency === 'EUR' ? Euro : currency === 'GBP' ? PoundSterling : currency === 'INR' ? IndianRupee : DollarSign;
   const currencySymbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : '$';
@@ -17,6 +19,9 @@ export const ExpenseTracker = () => {
   const [paidBy, setPaidBy] = useState('');
   const [splitAmong, setSplitAmong] = useState<string[]>([]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [category, setCategory] = useState('General');
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleAddExpense = async () => {
@@ -30,6 +35,7 @@ export const ExpenseTracker = () => {
       await expenseAPI.createExpense({
         title,
         amount: parseFloat(amount),
+        category,
         paidBy,
         splitAmong,
         date,
@@ -55,6 +61,7 @@ export const ExpenseTracker = () => {
       await expenseAPI.updateExpense(currentRoom.id, editingExpense, {
         title,
         amount: parseFloat(amount),
+        category,
         paidBy,
         splitAmong,
         date
@@ -93,6 +100,7 @@ export const ExpenseTracker = () => {
     setPaidBy(expense.paidBy);
     setSplitAmong(expense.splitAmong);
     setDate(expense.date);
+    setCategory(expense.category || 'General');
     setShowAddExpense(true);
   };
 
@@ -102,6 +110,7 @@ export const ExpenseTracker = () => {
     setPaidBy('');
     setSplitAmong([]);
     setDate(new Date().toISOString().split('T')[0]);
+    setCategory('General');
   };
 
   const toggleSplitMember = (memberId: string) => {
@@ -230,6 +239,9 @@ export const ExpenseTracker = () => {
                         <span className="text-xl font-bold text-gray-900">{currencySymbol}{expense.amount.toFixed(2)}</span>
                       </div>
                       <div className="text-sm text-gray-600 space-y-1">
+                        <p className="inline-block px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs mb-1">
+                          {expense.category || 'General'}
+                        </p>
                         <p>Paid by: {payer?.name || 'Unknown'}</p>
                         <p>Split among: {expense.splitAmong.length} member(s) ({currencySymbol}{splitPerPerson.toFixed(2)} each)</p>
                         <p className="flex items-center gap-1">
@@ -293,6 +305,30 @@ export const ExpenseTracker = () => {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                <div className="flex gap-2">
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="General">General</option>
+                    {expenseCategories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </select>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCategoryManager(true)}
+                      className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 whitespace-nowrap"
+                    >
+                      Manage
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Paid By</label>
                 <select
                   value={paidBy}
@@ -352,6 +388,85 @@ export const ExpenseTracker = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Manager Modal */}
+      {showCategoryManager && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Manage Categories</h3>
+            
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="New Category Name"
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+              <button
+                onClick={async () => {
+                  if (!newCategoryName.trim() || !currentRoom) return;
+                  setLoading(true);
+                  try {
+                    await expenseCategoryAPI.createCategory(currentRoom.id, newCategoryName.trim());
+                    await refreshData();
+                    setNewCategoryName('');
+                    toast.success('Category added');
+                  } catch (error: any) {
+                    toast.error(error.message || 'Failed to add category');
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                disabled={loading || !newCategoryName.trim()}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+            
+            <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
+              {expenseCategories.length === 0 ? (
+                <p className="text-gray-500 text-sm text-center">No custom categories yet.</p>
+              ) : (
+                expenseCategories.map(cat => (
+                  <div key={cat.id} className="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                    <span className="text-gray-900">{cat.name}</span>
+                    <button
+                      onClick={async () => {
+                        if (!currentRoom) return;
+                        setLoading(true);
+                        try {
+                          await expenseCategoryAPI.deleteCategory(cat.id);
+                          await refreshData();
+                          if (category === cat.name) setCategory('General');
+                          toast.success('Category deleted');
+                        } catch (error: any) {
+                          toast.error(error.message || 'Failed to delete category');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      disabled={loading}
+                      className="p-1 hover:bg-red-100 rounded text-red-600 transition-colors"
+                      title="Delete category"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            
+            <button
+              onClick={() => setShowCategoryManager(false)}
+              className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
