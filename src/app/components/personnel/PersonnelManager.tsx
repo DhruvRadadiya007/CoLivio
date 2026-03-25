@@ -18,6 +18,7 @@ export const PersonnelManager = () => {
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [monthlyCompensation, setMonthlyCompensation] = useState('');
+  const [joiningDate, setJoiningDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedPersonnel, setSelectedPersonnel] = useState<string | null>(null);
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'leave'>('present');
@@ -36,6 +37,7 @@ export const PersonnelManager = () => {
         name,
         role,
         monthlyCompensation: parseFloat(monthlyCompensation),
+        joiningDate,
         roomId: currentRoom.id,
       });
 
@@ -58,7 +60,8 @@ export const PersonnelManager = () => {
       await personnelAPI.updatePersonnel(currentRoom.id, editingPersonnel, {
         name,
         role,
-        monthlyCompensation: parseFloat(monthlyCompensation)
+        monthlyCompensation: parseFloat(monthlyCompensation),
+        joiningDate
       });
 
       await refreshData();
@@ -129,9 +132,9 @@ export const PersonnelManager = () => {
     const person = personnel.find(p => p.id === personnelId);
     if (!person) return;
 
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const cycleStart = getCurrentCycleStart(person.joiningDate);
     const existingPayment = payments.find(
-      p => p.personnelId === personnelId && p.month === currentMonth && p.roomId === currentRoom.id
+      p => p.personnelId === personnelId && p.month === cycleStart && p.roomId === currentRoom.id
     );
 
     setLoading(true);
@@ -143,7 +146,7 @@ export const PersonnelManager = () => {
       } else {
         await paymentAPI.savePayment({
           personnelId,
-          month: currentMonth,
+          month: cycleStart,
           amount: person.monthlyCompensation,
           roomId: currentRoom.id,
         });
@@ -163,6 +166,7 @@ export const PersonnelManager = () => {
     setName(person.name);
     setRole(person.role);
     setMonthlyCompensation(person.monthlyCompensation.toString());
+    setJoiningDate(person.joiningDate || new Date().toISOString().split('T')[0]);
     setShowAddPersonnel(true);
   };
 
@@ -170,6 +174,7 @@ export const PersonnelManager = () => {
     setName('');
     setRole('');
     setMonthlyCompensation('');
+    setJoiningDate(new Date().toISOString().split('T')[0]);
   };
 
   const resetAttendanceForm = () => {
@@ -189,8 +194,30 @@ export const PersonnelManager = () => {
     );
   }
 
+  const getCurrentCycleStart = (joinDateStr: string | undefined) => {
+    if (!joinDateStr) return new Date().toISOString().slice(0, 7); // fallback
+    
+    // Create local dates to avoid timezone shifts
+    const today = new Date();
+    const joinDateParts = joinDateStr.split('-');
+    const joinDay = parseInt(joinDateParts[2], 10) || 1;
+    
+    let cycleMonth = today.getMonth();
+    let cycleYear = today.getFullYear();
+
+    if (today.getDate() < joinDay) {
+      cycleMonth -= 1;
+      if (cycleMonth < 0) {
+        cycleMonth = 11;
+        cycleYear -= 1;
+      }
+    }
+    
+    // We can use a YYYY-MM-DD string for exact cycle matching
+    return `${cycleYear}-${String(cycleMonth + 1).padStart(2, '0')}-${String(joinDay).padStart(2, '0')}`;
+  };
+
   const roomPersonnel = personnel.filter(p => p.roomId === currentRoom.id);
-  const currentMonth = new Date().toISOString().slice(0, 7);
 
   return (
     <div className="pb-20 lg:pb-6">
@@ -267,12 +294,14 @@ export const PersonnelManager = () => {
         <div className="space-y-4">
           {roomPersonnel.length > 0 ? (
             roomPersonnel.map(person => {
+              const currentMonthStr = new Date().toISOString().slice(0, 7);
+              const cycleStart = getCurrentCycleStart(person.joiningDate);
               const monthAttendance = attendance.filter(
-                a => a.personnelId === person.id && a.date.startsWith(currentMonth)
+                a => a.personnelId === person.id && a.date.startsWith(currentMonthStr)
               );
               const presentDays = monthAttendance.filter(a => a.status === 'present').length;
               const monthPayment = payments.find(
-                p => p.personnelId === person.id && p.month === currentMonth
+                p => p.personnelId === person.id && p.month === cycleStart
               );
 
               return (
@@ -378,8 +407,13 @@ export const PersonnelManager = () => {
       {view === 'payment' && (
         <div className="space-y-4">
           {roomPersonnel.map(person => {
+            const cycleStart = getCurrentCycleStart(person.joiningDate);
+            const cycleDateObj = new Date(cycleStart);
+            const cycleEndObj = new Date(cycleDateObj.getFullYear(), cycleDateObj.getMonth() + 1, cycleDateObj.getDate() - 1);
+            const cycleText = `${cycleDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${cycleEndObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
             const monthPayment = payments.find(
-              p => p.personnelId === person.id && p.month === currentMonth && p.roomId === currentRoom.id
+              p => p.personnelId === person.id && p.month === cycleStart && p.roomId === currentRoom.id
             );
 
             return (
@@ -387,7 +421,7 @@ export const PersonnelManager = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">{person.name}</h3>
-                    <p className="text-gray-600">{person.role}</p>
+                    <p className="text-gray-600">{person.role} • Cycle: {cycleText}</p>
                     <p className="text-2xl font-bold text-gray-900 mt-2">₹{person.monthlyCompensation}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -455,6 +489,16 @@ export const PersonnelManager = () => {
                   placeholder="0.00"
                   step="0.01"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Joining Date</label>
+                <input
+                  type="date"
+                  value={joiningDate}
+                  onChange={(e) => setJoiningDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">Payment cycle start applies from this date.</p>
               </div>
               <div className="flex gap-3">
                 <button

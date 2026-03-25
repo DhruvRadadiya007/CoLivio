@@ -3,7 +3,7 @@ import { BarChart3, TrendingUp, Users } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 export const Analytics = () => {
-  const { currentRoom, tasks, expenses, personnel, payments } = useApp();
+  const { currentRoom, tasks, expenses, personnel, payments, bills } = useApp();
 
   if (!currentRoom) {
     return (
@@ -73,13 +73,26 @@ export const Analytics = () => {
   }));
 
   // Personnel expenses
+  const getCurrentCycleStart = (joinDateStr: string | undefined) => {
+    if (!joinDateStr) return new Date().toISOString().slice(0, 7);
+    const today = new Date();
+    const joinDay = parseInt(joinDateStr.split('-')[2], 10) || 1;
+    let cycleMonth = today.getMonth();
+    let cycleYear = today.getFullYear();
+    if (today.getDate() < joinDay) {
+      cycleMonth -= 1;
+      if (cycleMonth < 0) { cycleMonth = 11; cycleYear -= 1; }
+    }
+    return `${cycleYear}-${String(cycleMonth + 1).padStart(2, '0')}-${String(joinDay).padStart(2, '0')}`;
+  };
+
   const roomPersonnel = personnel.filter(p => p.roomId === currentRoom.id);
-  const currentMonth = new Date().toISOString().slice(0, 7);
   const totalPersonnelCost = roomPersonnel.reduce((sum, p) => sum + p.monthlyCompensation, 0);
   const paidPersonnelCost = roomPersonnel
     .filter(p => {
+      const cycleStart = getCurrentCycleStart(p.joiningDate);
       const payment = payments.find(
-        pay => pay.personnelId === p.id && pay.month === currentMonth && pay.status === 'paid'
+        pay => pay.personnelId === p.id && pay.month === cycleStart && pay.status === 'paid'
       );
       return payment;
     })
@@ -102,9 +115,13 @@ export const Analytics = () => {
             <h3 className="font-semibold text-gray-700">Total Expenses</h3>
           </div>
           <p className="text-3xl font-bold text-gray-900">
-            ₹{expenses.filter(e => e.roomId === currentRoom.id).reduce((sum, e) => sum + e.amount, 0).toFixed(2)}
+            ₹{(
+              expenses.filter(e => e.roomId === currentRoom.id).reduce((sum, e) => sum + e.amount, 0) +
+              bills.filter(b => b.roomId === currentRoom.id && b.status === 'paid').reduce((sum, b) => sum + b.amount, 0) +
+              payments.filter(p => p.roomId === currentRoom.id && p.status === 'paid').reduce((sum, p) => sum + p.amount, 0)
+            ).toFixed(2)}
           </p>
-          <p className="text-sm text-gray-600 mt-1">All time</p>
+          <p className="text-sm text-gray-600 mt-1">All time (+Bills/Staff)</p>
         </div>
 
         <div className="bg-white rounded-lg shadow-sm p-6">

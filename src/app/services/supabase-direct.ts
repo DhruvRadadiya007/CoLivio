@@ -444,12 +444,13 @@ export const personnelAPI = {
   async getPersonnel(roomId: string) {
     const { data, error } = await supabase.from('personnel').select('*').eq('room_id', roomId);
     if (error) throw error;
-    return data.map(p => ({
+    return data.map((p: any) => ({
       id: p.id,
       roomId: p.room_id,
       name: p.name,
       role: p.role,
-      monthlyCompensation: p.salary
+      monthlyCompensation: p.salary,
+      joiningDate: p.start_date ? p.start_date.split('T')[0] : new Date().toISOString().split('T')[0],
     }));
   },
 
@@ -460,10 +461,10 @@ export const personnelAPI = {
       role: person.role,
       salary: person.monthlyCompensation,
       payment_frequency: 'monthly',
-      start_date: new Date().toISOString()
+      start_date: person.joiningDate ? new Date(person.joiningDate).toISOString() : new Date().toISOString()
     }).select().single();
     if (error) throw error;
-    return { ...person, id: data.id };
+    return { ...person, id: data.id, joiningDate: person.joiningDate || new Date().toISOString().split('T')[0] };
   },
 
   async updatePersonnel(roomId: string, personId: string, updates: any) {
@@ -471,6 +472,7 @@ export const personnelAPI = {
     if (updates.name !== undefined) toUpdate.name = updates.name;
     if (updates.role !== undefined) toUpdate.role = updates.role;
     if (updates.monthlyCompensation !== undefined) toUpdate.salary = updates.monthlyCompensation;
+    if (updates.joiningDate !== undefined) toUpdate.start_date = new Date(updates.joiningDate).toISOString();
 
     const { error } = await supabase.from('personnel').update(toUpdate).eq('id', personId).eq('room_id', roomId);
     if (error) throw error;

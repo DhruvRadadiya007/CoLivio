@@ -91,6 +91,7 @@ export interface Personnel {
   name: string;
   role: string;
   monthlyCompensation: number;
+  joiningDate: string;
   roomId: string;
 }
 
@@ -200,7 +201,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setExpenses(expensesData || []);
       setExpenseCategories(expenseCategoriesData || []);
       setBills(billsData || []);
-      setPersonnel(personnelData || []);
+      setPersonnel((personnelData as Personnel[]) || []);
       setAttendance(attendanceData || []);
       setPayments((paymentsData as Payment[]) || []);
     } catch (error) {

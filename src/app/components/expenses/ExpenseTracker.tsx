@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { expenseAPI, expenseCategoryAPI } from '../../services/api';
 
 export const ExpenseTracker = () => {
-  const { currentRoom, expenses, refreshData, currency, expenseCategories, user } = useApp();
+  const { currentRoom, expenses, bills, payments, refreshData, currency, expenseCategories, user } = useApp();
   
   const isAdmin = currentRoom?.members.find((m) => m.userId === user?.id)?.role === 'admin';
   
@@ -132,7 +132,13 @@ export const ExpenseTracker = () => {
   }
 
   const roomExpenses = expenses.filter(e => e.roomId === currentRoom.id);
-  const totalExpenses = roomExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const roomBills = bills.filter(b => b.roomId === currentRoom.id && b.status === 'paid');
+  const roomPayments = payments.filter(p => p.roomId === currentRoom.id && p.status === 'paid');
+  
+  const totalExpenses = 
+    roomExpenses.reduce((sum, e) => sum + e.amount, 0) + 
+    roomBills.reduce((sum, b) => sum + b.amount, 0) + 
+    roomPayments.reduce((sum, p) => sum + p.amount, 0);
 
   // Calculate monthly summary
   const currentMonth = new Date().getMonth();
@@ -141,7 +147,17 @@ export const ExpenseTracker = () => {
     const expenseDate = new Date(e.date);
     return expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear;
   });
-  const monthlyTotal = monthlyExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const monthlyBills = roomBills.filter(b => {
+    const d = new Date(b.dueDate);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+  const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+  const monthlyPayments = roomPayments.filter(p => p.month.startsWith(currentMonthStr) || p.month.includes(`-${String(currentMonth + 1).padStart(2, '0')}-`));
+
+  const monthlyTotal = 
+    monthlyExpenses.reduce((sum, e) => sum + e.amount, 0) + 
+    monthlyBills.reduce((sum, b) => sum + b.amount, 0) + 
+    monthlyPayments.reduce((sum, p) => sum + p.amount, 0);
 
   // Calculate per-member breakdown
   const memberBreakdown = currentRoom.members.map(member => {
@@ -189,7 +205,7 @@ export const ExpenseTracker = () => {
             <h3 className="font-semibold text-gray-700">Total Expenses</h3>
           </div>
           <p className="text-3xl font-bold text-gray-900">{currencySymbol}{totalExpenses.toFixed(2)}</p>
-          <p className="text-sm text-gray-600 mt-1">All time</p>
+          <p className="text-sm text-gray-600 mt-1">All time (+Bills/Staff)</p>
         </div>
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="flex items-center gap-2 mb-2">
@@ -197,7 +213,7 @@ export const ExpenseTracker = () => {
             <h3 className="font-semibold text-gray-700">This Month</h3>
           </div>
           <p className="text-3xl font-bold text-gray-900">{currencySymbol}{monthlyTotal.toFixed(2)}</p>
-          <p className="text-sm text-gray-600 mt-1">{monthlyExpenses.length} expenses</p>
+          <p className="text-sm text-gray-600 mt-1">{monthlyExpenses.length + monthlyBills.length + monthlyPayments.length} combined items</p>
         </div>
       </div>
 
