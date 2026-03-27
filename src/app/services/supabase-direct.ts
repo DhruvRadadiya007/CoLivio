@@ -438,6 +438,71 @@ export const billAPI = {
   },
 };
 
+// ==================== BILL CYCLE CATCH-UP ====================
+// When a recurring bill is added with a past due_date, auto-insert pending entries for each
+// missing month up to and including the current month.
+export async function createRecurringBillCatchup(
+  roomId: string,
+  templateBill: { name: string; amount: number; dueDateStr: string }
+): Promise<void> {
+  const { name, amount, dueDateStr } = templateBill;
+
+  const firstDate = new Date(dueDateStr);
+  if (isNaN(firstDate.getTime())) return;
+
+  const dayOfMonth = firstDate.getDate();
+  const today = new Date();
+
+  // Build list of months that need a bill entry (from the month AFTER the first entry to now)
+  const missedMonths: Date[] = [];
+  let cursor = new Date(firstDate.getFullYear(), firstDate.getMonth() + 1, 1);
+
+  while (
+    cursor.getFullYear() < today.getFullYear() ||
+    (cursor.getFullYear() === today.getFullYear() && cursor.getMonth() <= today.getMonth())
+  ) {
+    missedMonths.push(new Date(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  if (missedMonths.length === 0) return;
+
+  // Fetch existing bills for this room and name to avoid duplicates
+  const { data: existing } = await supabase
+    .from('bills')
+    .select('due_date')
+    .eq('room_id', roomId)
+    .eq('name', name);
+
+  const existingMonths = new Set(
+    (existing || []).map((b: any) => {
+      const d = new Date(b.due_date);
+      return `${d.getFullYear()}-${d.getMonth()}`;
+    })
+  );
+
+  const toInsert = missedMonths
+    .filter(m => !existingMonths.has(`${m.getFullYear()}-${m.getMonth()}`))
+    .map(m => {
+      const lastDay = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+      const day = Math.min(dayOfMonth, lastDay);
+      const dueDate = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return {
+        room_id: roomId,
+        name,
+        amount,
+        category: 'General',
+        due_date: dueDate,
+        is_recurring: true,
+        status: 'pending',
+      };
+    });
+
+  if (toInsert.length > 0) {
+    await supabase.from('bills').insert(toInsert);
+  }
+}
+
 // ==================== PERSONNEL API ====================
 
 export const personnelAPI = {
@@ -506,6 +571,11 @@ export const attendanceAPI = {
     }).select().single();
     if (error) throw error;
     return { ...record, id: data.id };
+  },
+
+  async deleteAttendance(id: string) {
+    const { error } = await supabase.from('attendance').delete().eq('id', id);
+    if (error) throw error;
   },
 };
 

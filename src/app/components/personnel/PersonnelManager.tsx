@@ -24,6 +24,7 @@ export const PersonnelManager = () => {
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'leave'>('present');
   const [leaveReason, setLeaveReason] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editingAttendanceId, setEditingAttendanceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (showAttendance && selectedPersonnel && currentRoom) {
@@ -128,8 +129,9 @@ export const PersonnelManager = () => {
 
       await refreshData();
       setShowAttendance(false);
+      setEditingAttendanceId(null);
       resetAttendanceForm();
-      toast.success('Attendance marked successfully!');
+      toast.success(editingAttendanceId ? 'Attendance updated!' : 'Attendance marked successfully!');
     } catch (error: any) {
       toast.error(error.message || 'Failed to mark attendance');
     } finally {
@@ -137,13 +139,34 @@ export const PersonnelManager = () => {
     }
   };
 
-  const handleMarkPayment = async (personnelId: string) => {
+  const handleDeleteAttendance = async (id: string) => {
+    setLoading(true);
+    try {
+      await attendanceAPI.deleteAttendance(id);
+      await refreshData();
+      toast.success('Attendance record deleted!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete attendance');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startEditAttendance = (att: any) => {
+    setEditingAttendanceId(att.id);
+    setSelectedPersonnel(att.personnelId);
+    setAttendanceDate(att.date);
+    setAttendanceStatus(att.status);
+    setLeaveReason(att.leaveReason || '');
+    setShowAttendance(true);
+  };
+
+  const handleMarkPayment = async (personnelId: string, cycleStart: string) => {
     if (!currentRoom) return;
 
     const person = personnel.find(p => p.id === personnelId);
     if (!person) return;
 
-    const cycleStart = getCurrentCycleStart(person.joiningDate);
     const existingPayment = payments.find(
       p => p.personnelId === personnelId && p.month === cycleStart && p.roomId === currentRoom.id
     );
@@ -153,7 +176,7 @@ export const PersonnelManager = () => {
       if (existingPayment) {
         await paymentAPI.deletePayment(existingPayment.id);
         await refreshData();
-        toast.success('Payment unmarked successfully!');
+        toast.success('Payment unmarked — moved back to pending!');
       } else {
         await paymentAPI.savePayment({
           personnelId,
@@ -161,12 +184,11 @@ export const PersonnelManager = () => {
           amount: person.monthlyCompensation,
           roomId: currentRoom.id,
         });
-
         await refreshData();
         toast.success('Payment marked as paid!');
       }
     } catch (error: any) {
-      toast.error(error.message || 'Failed to mark payment');
+      toast.error(error.message || 'Failed to update payment');
     } finally {
       setLoading(false);
     }
@@ -193,6 +215,7 @@ export const PersonnelManager = () => {
     setAttendanceDate(new Date().toISOString().split('T')[0]);
     setAttendanceStatus('present');
     setLeaveReason('');
+    setEditingAttendanceId(null);
   };
 
   if (!currentRoom) {
@@ -206,26 +229,49 @@ export const PersonnelManager = () => {
   }
 
   const getCurrentCycleStart = (joinDateStr: string | undefined) => {
-    if (!joinDateStr) return new Date().toISOString().slice(0, 7); // fallback
-    
-    // Create local dates to avoid timezone shifts
+    if (!joinDateStr) return new Date().toISOString().slice(0, 7);
     const today = new Date();
     const joinDateParts = joinDateStr.split('-');
     const joinDay = parseInt(joinDateParts[2], 10) || 1;
-    
     let cycleMonth = today.getMonth();
     let cycleYear = today.getFullYear();
-
     if (today.getDate() < joinDay) {
       cycleMonth -= 1;
-      if (cycleMonth < 0) {
-        cycleMonth = 11;
-        cycleYear -= 1;
-      }
+      if (cycleMonth < 0) { cycleMonth = 11; cycleYear -= 1; }
     }
-    
-    // We can use a YYYY-MM-DD string for exact cycle matching
     return `${cycleYear}-${String(cycleMonth + 1).padStart(2, '0')}-${String(joinDay).padStart(2, '0')}`;
+  };
+
+  // Generate ALL monthly cycles from joining date to today (newest first)
+  const getAllCycles = (joinDateStr: string | undefined): string[] => {
+    if (!joinDateStr) return [];
+    const joinDate = new Date(joinDateStr + 'T00:00:00');
+    if (isNaN(joinDate.getTime())) return [];
+    const joinDay = joinDate.getDate();
+    const today = new Date();
+    const currentCycle = getCurrentCycleStart(joinDateStr);
+
+    const cycles: string[] = [];
+    let yr = joinDate.getFullYear();
+    let mo = joinDate.getMonth();
+
+    while (true) {
+      const lastDay = new Date(yr, mo + 1, 0).getDate();
+      const day = Math.min(joinDay, lastDay);
+      const cycleKey = `${yr}-${String(mo + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      cycles.push(cycleKey);
+
+      // Stop after we've added the current cycle
+      if (cycleKey === currentCycle) break;
+
+      mo++;
+      if (mo > 11) { mo = 0; yr++; }
+
+      // Safety: don't go past today
+      if (yr > today.getFullYear() + 1) break;
+    }
+
+    return cycles.reverse(); // newest first
   };
 
   const roomPersonnel = personnel.filter(p => p.roomId === currentRoom.id);
@@ -379,26 +425,25 @@ export const PersonnelManager = () => {
 
             return (
               <div key={person.id} className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">{person.name} - {person.role}</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-gray-900">{person.name} <span className="text-gray-500 font-normal text-sm">— {person.role}</span></h3>
+                  <span className="text-sm text-gray-500">{personAttendance.length} records</span>
+                </div>
                 {personAttendance.length > 0 ? (
                   <div className="space-y-2">
-                    {personAttendance.slice(0, 10).map(att => (
-                      <div key={att.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    {personAttendance.map(att => (
+                      <div key={att.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg group">
                         <div className="flex items-center gap-3">
-                          <Calendar className="h-5 w-5 text-gray-400" />
-                          <span className="text-gray-900">{new Date(att.date).toLocaleDateString()}</span>
+                          <Calendar className="h-4 w-4 text-gray-400" />
+                          <span className="text-gray-900 text-sm font-medium">{new Date(att.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
                         </div>
-                        <div className="flex items-center gap-4 flex-1 justify-end">
-                          {(att.status === 'leave' || att.status === 'absent') && (
-                            att.leaveReason ? (
-                              <span className="text-sm text-gray-600 bg-white px-3 py-1 shadow-sm border border-gray-200 rounded-lg">
-                                Reason: <span className="font-medium text-gray-800">{att.leaveReason}</span>
-                              </span>
-                            ) : (
-                              <span className="text-sm text-gray-400 italic mr-2">No reason given</span>
-                            )
+                        <div className="flex items-center gap-2">
+                          {(att.status === 'leave' || att.status === 'absent') && att.leaveReason && (
+                            <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border border-gray-200 hidden sm:block max-w-[160px] truncate">
+                              {att.leaveReason}
+                            </span>
                           )}
-                          <span className={`px-3 py-1 rounded-full text-sm font-medium min-w-[90px] text-center ${
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium min-w-[72px] text-center ${
                             att.status === 'present'
                               ? 'bg-green-100 text-green-800'
                               : att.status === 'absent'
@@ -407,12 +452,28 @@ export const PersonnelManager = () => {
                           }`}>
                             {att.status.charAt(0).toUpperCase() + att.status.slice(1)}
                           </span>
+                          {/* Edit & Delete — always visible */}
+                          <button
+                            onClick={() => startEditAttendance(att)}
+                            className="p-1.5 hover:bg-indigo-100 rounded-lg transition-colors"
+                            title="Edit attendance"
+                          >
+                            <Edit2 className="h-4 w-4 text-indigo-500" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAttendance(att.id)}
+                            disabled={loading}
+                            className="p-1.5 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
+                            title="Delete attendance"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </button>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 text-center py-4">No attendance records</p>
+                  <p className="text-gray-500 text-center py-4 text-sm">No attendance records yet</p>
                 )}
               </div>
             );
@@ -424,67 +485,98 @@ export const PersonnelManager = () => {
       {view === 'payment' && (
         <div className="space-y-6">
           {roomPersonnel.map(person => {
-            const cycleStart = getCurrentCycleStart(person.joiningDate);
-            const cycleDateObj = new Date(cycleStart);
-            const cycleEndObj = new Date(cycleDateObj.getFullYear(), cycleDateObj.getMonth() + 1, cycleDateObj.getDate() - 1);
-            const cycleText = `${cycleDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${cycleEndObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+            const currentCycle = getCurrentCycleStart(person.joiningDate);
+            const allCycles = getAllCycles(person.joiningDate);
 
-            const monthPayment = payments.find(
-              p => p.personnelId === person.id && p.month === cycleStart && p.roomId === currentRoom.id
-            );
+            // Compute cycle end date for display
+            const cycleLabel = (cycleStart: string) => {
+              const d = new Date(cycleStart + 'T00:00:00');
+              const end = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate() - 1);
+              return `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+            };
 
-            const pastPayments = payments.filter(
-              p => p.personnelId === person.id && p.roomId === currentRoom.id && p.status === 'paid' && p.month !== cycleStart
-            ).sort((a, b) => new Date(b.month).getTime() - new Date(a.month).getTime());
+            const pendingCount = allCycles.filter(cs =>
+              !payments.some(p => p.personnelId === person.id && p.month === cs && p.roomId === currentRoom.id)
+            ).length;
 
             return (
-              <div key={person.id} className="bg-white rounded-lg shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">{person.name}</h3>
-                    <p className="text-gray-600">{person.role} • Current Cycle: {cycleText}</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-2">₹{person.monthlyCompensation}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <span className={`px-4 py-2 rounded-full text-sm font-medium ${
-                      monthPayment?.status === 'paid'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {monthPayment?.status === 'paid' ? 'Paid' : 'Pending'}
-                    </span>
-                    <button
-                      onClick={() => handleMarkPayment(person.id)}
-                      disabled={loading}
-                      className={`px-4 py-2 rounded-lg font-medium disabled:opacity-50 ${
-                        monthPayment?.status === 'paid'
-                          ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                          : 'bg-green-600 text-white hover:bg-green-700'
-                      }`}
-                    >
-                      {monthPayment?.status === 'paid' ? 'Mark as Pending' : 'Mark as Paid'}
-                    </button>
+              <div key={person.id} className="bg-white rounded-lg shadow-sm overflow-hidden">
+                {/* Header */}
+                <div className="p-6 border-b border-gray-100">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-900">{person.name}</h3>
+                      <p className="text-gray-500 text-sm mt-0.5">{person.role}</p>
+                      <p className="text-2xl font-bold text-gray-900 mt-2">{currencySymbol}{person.monthlyCompensation}/mo</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        pendingCount === 0 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {pendingCount === 0 ? 'All Paid' : `${pendingCount} Pending`}
+                      </span>
+                      <span className="text-xs text-gray-400">Joined {new Date(person.joiningDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </div>
                   </div>
                 </div>
 
-                {pastPayments.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Payment History</h4>
-                    <div className="space-y-2">
-                      {pastPayments.map(pay => {
-                        const pDateObj = new Date(pay.month);
-                        const pEndObj = new Date(pDateObj.getFullYear(), pDateObj.getMonth() + 1, pDateObj.getDate() - 1);
-                        return (
-                          <div key={pay.id} className="flex justify-between items-center text-sm p-2 bg-gray-50 rounded">
-                            <span className="text-gray-600">
-                              {pDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {pEndObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </span>
-                            <span className="font-medium text-green-700">₹{pay.amount} (Paid)</span>
+                {/* All cycles list */}
+                {allCycles.length > 0 ? (
+                  <div className="divide-y divide-gray-50">
+                    {allCycles.map((cycleStart, idx) => {
+                      const paymentRecord = payments.find(
+                        p => p.personnelId === person.id && p.month === cycleStart && p.roomId === currentRoom.id
+                      );
+                      const isPaid = !!paymentRecord;
+                      const isCurrent = cycleStart === currentCycle;
+
+                      return (
+                        <div
+                          key={cycleStart}
+                          className={`flex items-center justify-between px-6 py-4 ${
+                            isCurrent ? 'bg-indigo-50' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              isPaid ? 'bg-green-500' : 'bg-yellow-400'
+                            }`} />
+                            <div>
+                              <span className="text-sm font-medium text-gray-800">
+                                {cycleLabel(cycleStart)}
+                              </span>
+                              {isCurrent && (
+                                <span className="ml-2 px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded font-medium">
+                                  ★ Current
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-semibold text-gray-900">{currencySymbol}{person.monthlyCompensation}</span>
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                              isPaid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {isPaid ? 'Paid' : 'Pending'}
+                            </span>
+                            <button
+                              onClick={() => handleMarkPayment(person.id, cycleStart)}
+                              disabled={loading}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
+                                isPaid
+                                  ? 'bg-gray-100 text-gray-600 hover:bg-yellow-100 hover:text-yellow-800'
+                                  : 'bg-green-600 text-white hover:bg-green-700'
+                              }`}
+                            >
+                              {isPaid ? 'Unmark' : 'Mark Paid'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
+                ) : (
+                  <p className="text-gray-400 text-center py-6 text-sm">No payment cycles yet</p>
                 )}
               </div>
             );
@@ -565,11 +657,13 @@ export const PersonnelManager = () => {
         </div>
       )}
 
-      {/* Mark Attendance Modal */}
+      {/* Mark / Edit Attendance Modal */}
       {showAttendance && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">Mark Attendance</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-4">
+              {editingAttendanceId ? 'Edit Attendance' : 'Mark Attendance'}
+            </h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Select Personnel</label>
