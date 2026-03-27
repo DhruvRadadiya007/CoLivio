@@ -9,14 +9,14 @@ export const TaskManager = () => {
   const [showAddTask, setShowAddTask] = useState(false);
   const [editingTask, setEditingTask] = useState<string | null>(null);
   const [taskName, setTaskName] = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
+  const [assignedTo, setAssignedTo] = useState<string[]>([]);
   const [deadline, setDeadline] = useState('');
   const [recurring, setRecurring] = useState<'none' | 'daily' | 'weekly'>('none');
   const [filter, setFilter] = useState<'all' | 'today' | 'week'>('all');
   const [loading, setLoading] = useState(false);
 
   const handleAddTask = async () => {
-    if (!currentRoom || !taskName.trim() || !assignedTo || !deadline) {
+    if (!currentRoom || !taskName.trim() || assignedTo.length === 0 || !deadline) {
       toast.error('Please fill all fields');
       return;
     }
@@ -25,7 +25,7 @@ export const TaskManager = () => {
     try {
       await taskAPI.createTask({
         name: taskName,
-        assignedTo,
+        assignedTo: assignedTo.join(', '),
         deadline,
         status: 'pending',
         recurring,
@@ -45,13 +45,13 @@ export const TaskManager = () => {
   };
 
   const handleUpdateTask = async () => {
-    if (!currentRoom || !editingTask || !taskName.trim() || !assignedTo || !deadline) return;
+    if (!currentRoom || !editingTask || !taskName.trim() || assignedTo.length === 0 || !deadline) return;
 
     setLoading(true);
     try {
       await taskAPI.updateTask(currentRoom.id, editingTask, {
         name: taskName,
-        assignedTo,
+        assignedTo: assignedTo.join(', '),
         deadline,
         recurring,
       });
@@ -104,7 +104,7 @@ export const TaskManager = () => {
   const startEdit = (task: any) => {
     setEditingTask(task.id);
     setTaskName(task.name);
-    setAssignedTo(task.assignedTo);
+    setAssignedTo(task.assignedTo ? task.assignedTo.split(', ') : []);
     setDeadline(task.deadline);
     setRecurring(task.recurring);
     setShowAddTask(true);
@@ -112,7 +112,7 @@ export const TaskManager = () => {
 
   const resetForm = () => {
     setTaskName('');
-    setAssignedTo('');
+    setAssignedTo([]);
     setDeadline('');
     setRecurring('none');
   };
@@ -223,7 +223,12 @@ export const TaskManager = () => {
                           <Calendar className="h-4 w-4" />
                           {task.deadline}
                         </span>
-                        <span>Assigned to: {task.assignedTo}</span>
+                        <div className="flex gap-1 flex-wrap items-center">
+                          <span className="text-gray-500 mr-1">Assigned to:</span>
+                          {task.assignedTo ? task.assignedTo.split(', ').map((name: string) => (
+                            <span key={name} className="font-semibold text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">{name}</span>
+                          )) : <span className="text-gray-400">Unassigned</span>}
+                        </div>
                         {task.recurring !== 'none' && (
                           <span className="flex items-center gap-1">
                             <RefreshCw className="h-4 w-4" />
@@ -277,7 +282,12 @@ export const TaskManager = () => {
                           <Calendar className="h-4 w-4" />
                           {task.deadline}
                         </span>
-                        <span>Assigned to: {task.assignedTo}</span>
+                        <div className="flex gap-1 flex-wrap items-center">
+                          <span className="text-gray-500 mr-1">Assigned to:</span>
+                          {task.assignedTo ? task.assignedTo.split(', ').map((name: string) => (
+                            <span key={name} className="font-semibold text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">{name}</span>
+                          )) : <span className="text-gray-400">Unassigned</span>}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -315,18 +325,29 @@ export const TaskManager = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Assigned To</label>
-                <select
-                  value={assignedTo}
-                  onChange={(e) => setAssignedTo(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                >
-                  <option value="">Select member</option>
+                <div className="flex flex-wrap gap-2 p-2 border border-gray-300 rounded-lg max-h-32 overflow-y-auto min-h-[3rem]">
                   {currentRoom.members.map(member => (
-                    <option key={member.userId} value={member.name}>
-                      {member.name}
-                    </option>
+                    <label key={member.userId} className={`flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors border ${
+                      assignedTo.includes(member.name) 
+                        ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        className="hidden"
+                        checked={assignedTo.includes(member.name)}
+                        onChange={(e) => {
+                          if (e.target.checked) setAssignedTo([...assignedTo, member.name]);
+                          else setAssignedTo(assignedTo.filter(n => n !== member.name));
+                        }}
+                      />
+                      <span className="text-sm font-medium">{member.name}</span>
+                    </label>
                   ))}
-                </select>
+                  {currentRoom.members.length === 0 && (
+                    <p className="text-sm text-gray-500 w-full text-center py-2">No members in room</p>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Deadline</label>

@@ -7,8 +7,6 @@ import { expenseAPI, expenseCategoryAPI } from '../../services/api';
 export const ExpenseTracker = () => {
   const { currentRoom, expenses, bills, payments, refreshData, currency, expenseCategories, user } = useApp();
   
-  const isAdmin = currentRoom?.members.find((m) => m.userId === user?.id)?.role === 'admin';
-  
   const CurrencyIcon = currency === 'EUR' ? Euro : currency === 'GBP' ? PoundSterling : currency === 'INR' ? IndianRupee : DollarSign;
   const currencySymbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : '$';
 
@@ -333,15 +331,13 @@ export const ExpenseTracker = () => {
                       <option key={cat.id} value={cat.name}>{cat.name}</option>
                     ))}
                   </select>
-                  {isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => setShowCategoryManager(true)}
-                      className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 whitespace-nowrap"
-                    >
-                      Manage
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowCategoryManager(true)}
+                    className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 whitespace-nowrap"
+                  >
+                    Manage
+                  </button>
                 </div>
               </div>
               <div>

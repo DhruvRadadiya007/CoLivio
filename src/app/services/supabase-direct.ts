@@ -532,6 +532,11 @@ export const paymentAPI = {
     return { ...payment, id: data.id };
   },
 
+  async deletePayment(paymentId: string) {
+    const { error } = await supabase.from('payments').delete().eq('id', paymentId);
+    if (error) throw error;
+  },
+
   async updatePayment(roomId: string, paymentId: string, updates: any) {
     return updates;
   },

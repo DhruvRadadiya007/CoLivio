@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Briefcase, Plus, Edit2, Trash2, Calendar, DollarSign, Euro, PoundSterling, IndianRupee, Users } from 'lucide-react';
 import { toast } from 'sonner';
@@ -24,6 +24,21 @@ export const PersonnelManager = () => {
   const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'leave'>('present');
   const [leaveReason, setLeaveReason] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (showAttendance && selectedPersonnel && currentRoom) {
+      const existing = attendance.find(
+        a => a.personnelId === selectedPersonnel && a.date === attendanceDate && a.roomId === currentRoom.id
+      );
+      if (existing) {
+        setAttendanceStatus(existing.status as any);
+        setLeaveReason(existing.leaveReason || '');
+      } else {
+        setAttendanceStatus('present');
+        setLeaveReason('');
+      }
+    }
+  }, [selectedPersonnel, attendanceDate, showAttendance, attendance, currentRoom]);
 
   const handleAddPersonnel = async () => {
     if (!currentRoom || !name.trim() || !role.trim() || !monthlyCompensation) {
@@ -100,14 +115,10 @@ export const PersonnelManager = () => {
       a => a.personnelId === selectedPersonnel && a.date === attendanceDate && a.roomId === currentRoom.id
     );
 
-    if (existingAttendance) {
-      toast.error('Attendance already marked for this date. Check database features for updates.');
-      return;
-    }
-
     setLoading(true);
     try {
       await attendanceAPI.saveAttendance({
+        id: existingAttendance?.id,
         personnelId: selectedPersonnel,
         date: attendanceDate,
         status: attendanceStatus,
@@ -140,9 +151,9 @@ export const PersonnelManager = () => {
     setLoading(true);
     try {
       if (existingPayment) {
-        // Technically we need to implement unmarking payments or deleting them in DB
-        // assuming updatePayment with 'pending' means deleting it
-        toast.error('Cannot unmark payment dynamically yet. Delete not fully implemented.');
+        await paymentAPI.deletePayment(existingPayment.id);
+        await refreshData();
+        toast.success('Payment unmarked successfully!');
       } else {
         await paymentAPI.savePayment({
           personnelId,
@@ -377,8 +388,17 @@ export const PersonnelManager = () => {
                           <Calendar className="h-5 w-5 text-gray-400" />
                           <span className="text-gray-900">{new Date(att.date).toLocaleDateString()}</span>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        <div className="flex items-center gap-4 flex-1 justify-end">
+                          {(att.status === 'leave' || att.status === 'absent') && (
+                            att.leaveReason ? (
+                              <span className="text-sm text-gray-600 bg-white px-3 py-1 shadow-sm border border-gray-200 rounded-lg">
+                                Reason: <span className="font-medium text-gray-800">{att.leaveReason}</span>
+                              </span>
+                            ) : (
+                              <span className="text-sm text-gray-400 italic mr-2">No reason given</span>
+                            )
+                          )}
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium min-w-[90px] text-center ${
                             att.status === 'present'
                               ? 'bg-green-100 text-green-800'
                               : att.status === 'absent'
@@ -387,9 +407,6 @@ export const PersonnelManager = () => {
                           }`}>
                             {att.status.charAt(0).toUpperCase() + att.status.slice(1)}
                           </span>
-                          {att.leaveReason && (
-                            <span className="text-sm text-gray-600">({att.leaveReason})</span>
-                          )}
                         </div>
                       </div>
                     ))}
@@ -405,7 +422,7 @@ export const PersonnelManager = () => {
 
       {/* Payment View */}
       {view === 'payment' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {roomPersonnel.map(person => {
             const cycleStart = getCurrentCycleStart(person.joiningDate);
             const cycleDateObj = new Date(cycleStart);
@@ -416,12 +433,16 @@ export const PersonnelManager = () => {
               p => p.personnelId === person.id && p.month === cycleStart && p.roomId === currentRoom.id
             );
 
+            const pastPayments = payments.filter(
+              p => p.personnelId === person.id && p.roomId === currentRoom.id && p.status === 'paid' && p.month !== cycleStart
+            ).sort((a, b) => new Date(b.month).getTime() - new Date(a.month).getTime());
+
             return (
               <div key={person.id} className="bg-white rounded-lg shadow-sm p-6">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">{person.name}</h3>
-                    <p className="text-gray-600">{person.role} • Cycle: {cycleText}</p>
+                    <p className="text-gray-600">{person.role} • Current Cycle: {cycleText}</p>
                     <p className="text-2xl font-bold text-gray-900 mt-2">₹{person.monthlyCompensation}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -445,6 +466,26 @@ export const PersonnelManager = () => {
                     </button>
                   </div>
                 </div>
+
+                {pastPayments.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Payment History</h4>
+                    <div className="space-y-2">
+                      {pastPayments.map(pay => {
+                        const pDateObj = new Date(pay.month);
+                        const pEndObj = new Date(pDateObj.getFullYear(), pDateObj.getMonth() + 1, pDateObj.getDate() - 1);
+                        return (
+                          <div key={pay.id} className="flex justify-between items-center text-sm p-2 bg-gray-50 rounded">
+                            <span className="text-gray-600">
+                              {pDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {pEndObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                            <span className="font-medium text-green-700">₹{pay.amount} (Paid)</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

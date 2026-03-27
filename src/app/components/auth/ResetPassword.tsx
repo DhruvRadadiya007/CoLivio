@@ -73,7 +73,6 @@ export const ResetPassword = () => {
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8">
       <div className="text-center mb-6">
-        <h1 className="text-3xl font-bold text-indigo-600 mb-2">CoLivio</h1>
         <h2 className="text-2xl font-bold text-gray-800">Reset Password</h2>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">
