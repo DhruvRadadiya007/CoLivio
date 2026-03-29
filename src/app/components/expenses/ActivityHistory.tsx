@@ -16,10 +16,13 @@ import {
 import { toast } from 'sonner';
 import { expenseAPI, splitSettlementAPI } from '../../services/api';
 
+import { ConfirmModal } from '../ui/ConfirmModal';
+
 export const ActivityHistory = () => {
   const { currentRoom, expenses, splitSettlements, refreshData, currency } = useApp();
   const [filterType, setFilterType] = useState<'all' | 'expense' | 'settlement'>('all');
   const [loading, setLoading] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; type: 'expense' | 'settlement' } | null>(null);
 
   const currencySymbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : '$';
 
@@ -40,7 +43,7 @@ export const ActivityHistory = () => {
   }, [expenses, splitSettlements, filterType]);
 
   const handleDeleteExpense = async (id: string) => {
-    if (!currentRoom || !window.confirm('Are you sure you want to delete this expense?')) return;
+    if (!currentRoom) return;
     setLoading(id);
     try {
       await expenseAPI.deleteExpense(currentRoom.id, id);
@@ -50,11 +53,11 @@ export const ActivityHistory = () => {
       toast.error(error.message || 'Failed to delete expense');
     } finally {
       setLoading(null);
+      setDeleteConfirm(null);
     }
   };
 
   const handleDeleteSettlement = async (id: string) => {
-    if (!window.confirm('Delete this payment record? Balance will be recalculated.')) return;
     setLoading(id);
     try {
       await splitSettlementAPI.deleteSettlement(id);
@@ -64,6 +67,7 @@ export const ActivityHistory = () => {
       toast.error(error.message || 'Failed to delete settlement');
     } finally {
       setLoading(null);
+      setDeleteConfirm(null);
     }
   };
 
@@ -151,7 +155,7 @@ export const ActivityHistory = () => {
                   </p>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => isExpense ? handleDeleteExpense(item.id) : handleDeleteSettlement(item.id)}
+                      onClick={() => setDeleteConfirm({ id: item.id, type: isExpense ? 'expense' : 'settlement' })}
                       disabled={loading === item.id}
                       className="p-2.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-2xl transition-all disabled:opacity-50 group-hover:scale-105"
                       title="Delete entry"
@@ -177,6 +181,20 @@ export const ActivityHistory = () => {
           </div>
         )}
       </div>
+
+      {/* Confirmation Dialogs */}
+      <ConfirmModal
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={() => {
+          if (deleteConfirm?.type === 'expense') handleDeleteExpense(deleteConfirm.id);
+          else if (deleteConfirm?.type === 'settlement') handleDeleteSettlement(deleteConfirm.id);
+        }}
+        title={`Delete ${deleteConfirm?.type === 'expense' ? 'Expense' : 'Settlement'}?`}
+        message={`Are you sure you want to delete this ${deleteConfirm?.type}? This action cannot be undone and will affect room balances.`}
+        confirmText="Delete permanently"
+        loading={!!loading}
+      />
     </div>
   );
 };

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Users, DollarSign, Percent, Calculator } from 'lucide-react';
+import { X, Users, DollarSign, Percent, Calculator, Plus, Trash2, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { expenseAPI } from '../../services/api';
+import { expenseAPI, expenseCategoryAPI } from '../../services/api';
 
 interface AddExpenseModalProps {
   isOpen: boolean;
@@ -23,6 +23,12 @@ export const AddExpenseModal = ({ isOpen, onClose, editingExpense }: AddExpenseM
   const [splitType, setSplitType] = useState<'equal' | 'exact' | 'percentage'>('equal');
   const [splitAmong, setSplitAmong] = useState<string[]>([]);
   const [splitDetails, setSplitDetails] = useState<Record<string, number>>({});
+  
+  // Category management state
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [showManageCategories, setShowManageCategories] = useState(false);
+  const [categoryLoading, setCategoryLoading] = useState(false);
 
   useEffect(() => {
     if (editingExpense) {
@@ -130,6 +136,41 @@ export const AddExpenseModal = ({ isOpen, onClose, editingExpense }: AddExpenseM
     setSplitDetails({ ...splitDetails, [userId]: num });
   };
 
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim() || !currentRoom) return;
+    
+    setCategoryLoading(true);
+    try {
+      await expenseCategoryAPI.createCategory(currentRoom.id, newCategoryName.trim());
+      toast.success('Category added');
+      setNewCategoryName('');
+      setShowAddCategory(false);
+      await refreshData();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to add category');
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    if (!window.confirm('Are you sure you want to delete this category?')) return;
+    
+    setCategoryLoading(true);
+    try {
+      await expenseCategoryAPI.deleteCategory(categoryId);
+      toast.success('Category deleted');
+      if (category === expenseCategories.find(c => c.id === categoryId)?.name) {
+        setCategory('General');
+      }
+      await refreshData();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete category');
+    } finally {
+      setCategoryLoading(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -186,17 +227,95 @@ export const AddExpenseModal = ({ isOpen, onClose, editingExpense }: AddExpenseM
           {/* Category & Payer */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Category</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
-              >
-                <option value="General">General</option>
-                {expenseCategories.map(cat => (
-                  <option key={cat.id} value={cat.name}>{cat.name}</option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-semibold text-gray-700">Category</label>
+                <div className="flex items-center gap-1">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowManageCategories(!showManageCategories);
+                      setShowAddCategory(false);
+                    }}
+                    className={`p-1 rounded-md transition-colors ${showManageCategories ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:bg-gray-100'}`}
+                    title="Manage categories"
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowAddCategory(!showAddCategory);
+                      setShowManageCategories(false);
+                    }}
+                    className={`p-1 rounded-md transition-colors ${showAddCategory ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:bg-gray-100'}`}
+                    title="Quick add category"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+              
+              {!showAddCategory && !showManageCategories && (
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
+                >
+                  <option value="General">General</option>
+                  {expenseCategories.map(cat => (
+                    <option key={cat.id} value={cat.name}>{cat.name}</option>
+                  ))}
+                </select>
+              )}
+
+              {showAddCategory && (
+                <div className="flex gap-2 animate-in slide-in-from-top-1 duration-200">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="Category name"
+                    className="flex-1 px-3 py-2 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCategory}
+                    disabled={categoryLoading || !newCategoryName.trim()}
+                    className="px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold disabled:opacity-50"
+                  >
+                    {categoryLoading ? '...' : 'Add'}
+                  </button>
+                </div>
+              )}
+
+              {showManageCategories && (
+                <div className="space-y-2 max-h-32 overflow-y-auto p-2 bg-gray-50 rounded-xl border border-gray-100 animate-in slide-in-from-top-1 duration-200">
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 px-1">
+                    <span>Active Categories</span>
+                  </div>
+                  <div className="flex items-center justify-between px-2 py-1.5 bg-white rounded-lg border border-gray-100 text-sm font-medium">
+                    <span className="text-gray-900">General</span>
+                    <span className="text-[10px] text-gray-400 uppercase font-black">Default</span>
+                  </div>
+                  {expenseCategories.map(cat => (
+                    <div key={cat.id} className="flex items-center justify-between px-2 py-1.5 bg-white rounded-lg border border-gray-100 text-sm group">
+                      <span className="text-gray-900 font-medium truncate pr-2">{cat.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCategory(cat.id)}
+                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {expenseCategories.length === 0 && (
+                    <p className="text-[10px] text-center text-gray-300 py-2 italic">No custom categories</p>
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Paid By</label>

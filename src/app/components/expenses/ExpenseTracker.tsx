@@ -12,8 +12,7 @@ import {
   Wallet,
   TrendingUp,
   Tag,
-  Search,
-  Sparkles
+  Search
 } from 'lucide-react';
 import { AddExpenseModal } from './AddExpenseModal';
 import { SettleModal } from './SettleModal';
@@ -166,7 +165,6 @@ export const ExpenseTracker = () => {
                 {/* Left: Summary and Key Actions */}
                 <div className="space-y-6">
                   <div className="bg-indigo-600 rounded-[40px] p-8 text-white relative group overflow-hidden shadow-2xl shadow-indigo-200 h-full">
-                    <Sparkles className="absolute top-8 right-8 h-8 w-8 text-indigo-400 group-hover:scale-125 transition-transform duration-700" />
                     <h2 className="text-2xl font-black mb-1">Financial Overview</h2>
                     <p className="text-indigo-200 text-sm font-bold uppercase tracking-widest mb-8">Quick actions & Room status</p>
                     
