@@ -305,47 +305,74 @@ export const taskAPI = {
 
 // ==================== EXPENSE API ====================
 
-// Frontend expects: id, title, amount, paidBy, splitAmong, date, roomId
+// Frontend expects: id, title, amount, paidBy, splitAmong, splitType, splitDetails, date, roomId
 export const expenseAPI = {
   async getExpenses(roomId: string) {
     const { data, error } = await supabase.from('expenses').select('*').eq('room_id', roomId);
     if (error) throw error;
-    return data.map(e => ({
-      id: e.id,
-      roomId: e.room_id,
-      title: e.description,
-      amount: e.amount,
-      category: e.category || 'General',
-      paidBy: e.paid_by,
-      splitAmong: e.split_details || [],
-      date: e.date ? e.date.split('T')[0] : ''
-    }));
+    return data.map((e: any) => {
+      const rawDetails = e.split_details;
+      const splitType: string = e.split_type || 'equal';
+      // Legacy data: split_details was stored as an array of user IDs (equal split)
+      const isLegacyArray = Array.isArray(rawDetails);
+      return {
+        id: e.id,
+        roomId: e.room_id,
+        title: e.description,
+        amount: e.amount,
+        category: e.category || 'General',
+        paidBy: e.paid_by,
+        splitType,
+        // splitAmong: unified list of participant IDs
+        splitAmong: isLegacyArray
+          ? (rawDetails as string[])
+          : Object.keys(rawDetails || {}),
+        // splitDetails: { userId → amount/percentage } for exact & percentage splits
+        splitDetails: isLegacyArray ? {} : (rawDetails as Record<string, number> || {}),
+        date: e.date ? e.date.split('T')[0] : '',
+      };
+    });
   },
 
   async createExpense(expense: any) {
+    // For equal splits, store participant IDs array (backward compat).
+    // For exact / percentage splits, store { userId: value } map.
+    const splitType: string = expense.splitType || 'equal';
+    const splitDetailsToStore =
+      splitType === 'equal'
+        ? expense.splitAmong
+        : expense.splitDetails;
+
     const { data, error } = await supabase.from('expenses').insert({
       room_id: expense.roomId,
       description: expense.title,
       amount: expense.amount,
       category: expense.category || 'General',
       paid_by: expense.paidBy,
-      split_type: 'custom',
-      split_details: expense.splitAmong,
-      date: expense.date
+      split_type: splitType,
+      split_details: splitDetailsToStore,
+      date: expense.date,
     }).select().single();
     if (error) throw error;
     return { ...expense, id: data.id };
   },
 
   async updateExpense(roomId: string, expenseId: string, updates: any) {
-    let toUpdate: any = {};
-    if (updates.title !== undefined) toUpdate.description = updates.title;
-    if (updates.amount !== undefined) toUpdate.amount = updates.amount;
-    if (updates.category !== undefined) toUpdate.category = updates.category;
-    if (updates.paidBy !== undefined) toUpdate.paid_by = updates.paidBy;
-    if (updates.splitAmong !== undefined) toUpdate.split_details = updates.splitAmong;
-    if (updates.date !== undefined) toUpdate.date = updates.date;
-    
+    const toUpdate: any = {};
+    if (updates.title     !== undefined) toUpdate.description  = updates.title;
+    if (updates.amount    !== undefined) toUpdate.amount       = updates.amount;
+    if (updates.category  !== undefined) toUpdate.category     = updates.category;
+    if (updates.paidBy    !== undefined) toUpdate.paid_by      = updates.paidBy;
+    if (updates.date      !== undefined) toUpdate.date         = updates.date;
+    if (updates.splitType !== undefined) toUpdate.split_type   = updates.splitType;
+    if (updates.splitAmong !== undefined || updates.splitDetails !== undefined) {
+      const splitType: string = updates.splitType || 'equal';
+      toUpdate.split_details =
+        splitType === 'equal'
+          ? (updates.splitAmong ?? [])
+          : (updates.splitDetails ?? {});
+    }
+
     const { error } = await supabase.from('expenses').update(toUpdate).eq('id', expenseId).eq('room_id', roomId);
     if (error) throw error;
     return updates;
@@ -609,5 +636,65 @@ export const paymentAPI = {
 
   async updatePayment(roomId: string, paymentId: string, updates: any) {
     return updates;
+  },
+};
+
+// ==================== SPLIT SETTLEMENT API ====================
+
+export const splitSettlementAPI = {
+  async getSettlements(roomId: string) {
+    const { data, error } = await supabase
+      .from('split_settlements')
+      .select('*')
+      .eq('room_id', roomId)
+      .order('settled_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map((s: any) => ({
+      id: s.id,
+      roomId: s.room_id,
+      fromUserId: s.from_user_id,
+      toUserId: s.to_user_id,
+      amount: s.amount,
+      note: s.note || '',
+      settledAt: s.settled_at,
+    }));
+  },
+
+  async createSettlement(settlement: {
+    roomId: string;
+    fromUserId: string;
+    toUserId: string;
+    amount: number;
+    note?: string;
+  }) {
+    const { data, error } = await supabase
+      .from('split_settlements')
+      .insert({
+        room_id: settlement.roomId,
+        from_user_id: settlement.fromUserId,
+        to_user_id: settlement.toUserId,
+        amount: settlement.amount,
+        note: settlement.note || null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return {
+      id: data.id,
+      roomId: data.room_id,
+      fromUserId: data.from_user_id,
+      toUserId: data.to_user_id,
+      amount: data.amount,
+      note: data.note || '',
+      settledAt: data.settled_at,
+    };
+  },
+
+  async deleteSettlement(settlementId: string) {
+    const { error } = await supabase
+      .from('split_settlements')
+      .delete()
+      .eq('id', settlementId);
+    if (error) throw error;
   },
 };

@@ -10,6 +10,7 @@ import {
   attendanceAPI,
   paymentAPI,
   expenseCategoryAPI,
+  splitSettlementAPI,
   setAccessToken,
   getAccessToken,
 } from '../services/api';
@@ -71,9 +72,21 @@ export interface Expense {
   amount: number;
   category: string;
   paidBy: string;
-  splitAmong: string[];
+  splitAmong: string[];           // participant user IDs (always populated)
+  splitType: 'equal' | 'exact' | 'percentage';
+  splitDetails: Record<string, number>; // userId → amount (exact) or % (percentage)
   date: string;
   roomId: string;
+}
+
+export interface SplitSettlement {
+  id: string;
+  roomId: string;
+  fromUserId: string;   // who paid
+  toUserId: string;     // who received
+  amount: number;
+  note: string;
+  settledAt: string;
 }
 
 export interface Bill {
@@ -134,6 +147,8 @@ interface AppContextType {
   setAttendance: (attendance: Attendance[]) => void;
   payments: Payment[];
   setPayments: (payments: Payment[]) => void;
+  splitSettlements: SplitSettlement[];
+  setSplitSettlements: (s: SplitSettlement[]) => void;
   logout: () => void;
   refreshData: () => Promise<void>;
   loading: boolean;
@@ -162,6 +177,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [splitSettlements, setSplitSettlements] = useState<SplitSettlement[]>([]);
   const [loading, setLoading] = useState(true);
   const [currency, setCurrencyState] = useState(() => localStorage.getItem('currency') || 'USD');
 
@@ -185,6 +201,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         personnelData,
         attendanceData,
         paymentsData,
+        settlementsData,
       ] = await Promise.all([
         mealAPI.getMeals(currentRoom.id),
         taskAPI.getTasks(currentRoom.id),
@@ -194,16 +211,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         personnelAPI.getPersonnel(currentRoom.id),
         attendanceAPI.getAttendance(currentRoom.id),
         paymentAPI.getPayments(currentRoom.id),
+        splitSettlementAPI.getSettlements(currentRoom.id).catch(() => []),
       ]);
 
       setMeals(mealsData || []);
       setTasks((tasksData as Task[]) || []);
-      setExpenses(expensesData || []);
+      setExpenses(expensesData as Expense[] || []);
       setExpenseCategories(expenseCategoriesData || []);
       setBills(billsData || []);
       setPersonnel((personnelData as Personnel[]) || []);
       setAttendance(attendanceData || []);
       setPayments((paymentsData as Payment[]) || []);
+      setSplitSettlements((settlementsData as SplitSettlement[]) || []);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
@@ -264,6 +283,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setPersonnel([]);
       setAttendance([]);
       setPayments([]);
+      setSplitSettlements([]);
       setLoading(false);
     }
   }, [currentRoom, refreshData]);
@@ -284,6 +304,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setPersonnel([]);
       setAttendance([]);
       setPayments([]);
+      setSplitSettlements([]);
       setAccessToken(null);
     }
   }, []);
@@ -311,6 +332,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setAttendance,
         payments,
         setPayments,
+        splitSettlements,
+        setSplitSettlements,
         logout,
         refreshData,
         loading,
