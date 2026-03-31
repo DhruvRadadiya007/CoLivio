@@ -1,102 +1,124 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { computeNetBalances, computePairwiseOwes } from './debtSimplifier';
-import { HandCoins, Info } from 'lucide-react';
+import { computeUserNetBalances } from './debtSimplifier';
+import { HandCoins, ArrowDownRight, ArrowUpRight, Wallet, User, History, MessageSquareShare } from 'lucide-react';
+import { toast } from 'sonner';
 import { SettleModal } from './SettleModal';
 
 export const BalanceSheet = () => {
-  const { currentRoom, expenses, splitSettlements, currency } = useApp();
+  const { currentRoom, expenses, splitSettlements, currency, user } = useApp();
   const [settleData, setSettleData] = useState<{ fromUserId: string; toUserId: string; amount: number } | null>(null);
 
   const currencySymbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : '$';
 
-  // 1. Compute overall net positions per user
-  const netBalances = useMemo(() => 
-    computeNetBalances(expenses, splitSettlements),
-  [expenses, splitSettlements]);
+  if (!currentRoom || !user) return null;
 
-  // 2. Compute raw pairwise debts (A owes B)
-  const pairwiseOwes = useMemo(() => 
-    computePairwiseOwes(expenses, splitSettlements),
-  [expenses, splitSettlements]);
+  const currentUserId = user.id;
 
+  // 1. Compute reconciled user balances with automatic netting
+  const { totalNet, balances } = useMemo(() => 
+    computeUserNetBalances(currentUserId, expenses, splitSettlements),
+  [currentUserId, expenses, splitSettlements]);
 
-  if (!currentRoom) return null;
-
-  const currentUserId = currentRoom.members?.[0]?.userId; // Fallback or context user?
-  // Let's assume we want to show all room balances.
-  
   const getMemberName = (id: string) => currentRoom.members.find(m => m.userId === id)?.name || 'Unknown';
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-xl font-bold text-gray-900">Room Balances</h2>
-        <p className="text-sm text-gray-500">Track who owes whom overall</p>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Top Summary Section */}
+      <div className="bg-white rounded-[32px] p-8 border border-gray-100 shadow-sm relative overflow-hidden group">
+        <div className={`absolute inset-0 opacity-[0.03] transition-colors duration-500 ${totalNet > 0 ? 'bg-green-600' : totalNet < 0 ? 'bg-red-600' : 'bg-gray-600'}`} />
+        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-center gap-6">
+            <div className={`w-16 h-16 rounded-3xl flex items-center justify-center transition-all ${totalNet > 0 ? 'bg-green-50 text-green-600' : totalNet < 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-500'}`}>
+              <Wallet className="h-8 w-8" />
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-gray-400 mb-1">Overall Balance</p>
+              <h2 className={`text-4xl font-black ${totalNet > 0 ? 'text-green-600' : totalNet < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                {totalNet === 0 ? 'Settled Up' : `${totalNet > 0 ? 'You are owed' : 'You owe'} ${currencySymbol}${Math.abs(totalNet).toFixed(2)}`}
+              </h2>
+            </div>
+          </div>
+          {totalNet !== 0 && (
+            <div className="flex items-center gap-2">
+              <span className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest ${totalNet > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                {totalNet > 0 ? 'Overall Profit' : 'Pending Action'}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Raw View (every user position) */}
+      {/* Individual Breakdown Section */}
       <div className="space-y-4">
-        {currentRoom.members.map(member => {
-          const net = netBalances[member.userId] || 0;
-          const owesToOthers = Object.entries(pairwiseOwes[member.userId] || {}).filter(([_, val]) => val > 0.005);
-          
-          return (
-            <div key={member.userId} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-sm ${net > 0 ? 'bg-green-100 text-green-700' : net < 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
-                    {member.name[0].toUpperCase()}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">{member.name}</h4>
-                    <p className={`text-xs font-bold uppercase ${net > 0 ? 'text-green-600' : net < 0 ? 'text-red-500' : 'text-gray-400'}`}>
-                      {net > 0 ? 'Total Owed' : net < 0 ? 'Owes Total' : 'Settled'}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className={`text-xl font-black ${net > 0 ? 'text-green-600' : net < 0 ? 'text-red-500' : 'text-gray-900'}`}>
-                    {net > 0 ? '+' : ''}{currencySymbol}{Math.abs(net).toFixed(2)}
-                  </p>
-                </div>
-              </div>
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-sm font-black uppercase tracking-[0.15em] text-gray-400">Individual Net Balances</h3>
+          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{Object.keys(balances).length} people involved</span>
+        </div>
 
-              {owesToOthers.length > 0 && (
-                <div className="pt-4 border-t border-gray-50 space-y-2">
-                  {owesToOthers.map(([toId, amount]) => (
-                    <div key={toId} className="flex items-center justify-between text-sm py-2 px-4 bg-gray-50 rounded-xl">
-                      <span className="text-gray-500 flex items-center gap-2">
-                        Owes <span className="font-bold text-gray-700">{getMemberName(toId)}</span>
-                      </span>
-                      <div className="flex items-center gap-4">
-                        <span className="font-black text-gray-900">{currencySymbol}{amount.toFixed(2)}</span>
-                        <button
-                          onClick={() => setSettleData({ fromUserId: member.userId, toUserId: toId, amount })}
-                          className="p-1.5 hover:bg-gray-200 rounded-lg transition-colors text-indigo-600"
-                          title="Settle this specific debt"
-                        >
-                          <HandCoins className="h-4 w-4" />
-                        </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Object.entries(balances).length > 0 ? (
+            Object.entries(balances).map(([userId, amount]) => {
+              const isOwedToUser = amount > 0;
+              return (
+                <div 
+                  key={userId} 
+                  className={`bg-white rounded-[28px] p-6 border transition-all duration-300 flex flex-col justify-between h-full group
+                    ${isOwedToUser ? 'border-gray-100 hover:border-green-200 hover:shadow-green-100/20' : 'border-gray-100 hover:border-red-200 hover:shadow-red-100/20'}
+                  `}
+                >
+                  <div className="flex items-start justify-between mb-6">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl border transition-colors
+                        ${isOwedToUser ? 'bg-green-50 text-green-600 border-green-100 group-hover:bg-green-100' : 'bg-red-50 text-red-500 border-red-100 group-hover:bg-red-100'}
+                      `}>
+                        {getMemberName(userId)[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <h4 className="font-black text-gray-900 text-lg">{getMemberName(userId)}</h4>
+                        <p className={`text-xs font-bold uppercase tracking-widest mt-0.5 ${isOwedToUser ? 'text-green-600' : 'text-red-500'}`}>
+                          {isOwedToUser ? 'Owes you' : 'You owe'}
+                        </p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                    <div className="text-right">
+                      <p className={`text-2xl font-black ${isOwedToUser ? 'text-green-600' : 'text-red-600'}`}>
+                        {currencySymbol}{Math.abs(amount).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
 
-      {/* Info card */}
-      <div className="bg-indigo-50/50 rounded-3xl p-6 border border-indigo-100 flex items-start gap-4">
-        <Info className="h-5 w-5 text-indigo-600 shrink-0 mt-1" />
-        <div>
-          <h5 className="text-sm font-bold text-indigo-900 mb-1">How balances work</h5>
-          <p className="text-xs text-indigo-700/80 leading-relaxed">
-            Balances are calculated from all expenses and payments recorded in this room.
-          </p>
+                  <div className="flex gap-2">
+                    {isOwedToUser ? (
+                      <button
+                        onClick={() => {
+                          toast.info(`Payment request sent to ${getMemberName(userId)} (Simulated)`);
+                        }}
+                        className="flex-1 px-4 py-3 bg-green-600 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-green-700 transition-all shadow-lg shadow-green-100 flex items-center justify-center gap-2"
+                      >
+                        <MessageSquareShare className="h-3.5 w-3.5" />
+                        Request Payment
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setSettleData({ fromUserId: currentUserId, toUserId: userId, amount: Math.abs(amount) })}
+                        className="flex-1 px-4 py-3 bg-red-600 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-red-700 transition-all shadow-lg shadow-red-100 flex items-center justify-center gap-2"
+                      >
+                        <HandCoins className="h-3.5 w-3.5" />
+                        Pay Now
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="md:col-span-2 py-24 text-center bg-gray-50/50 rounded-[40px] border-2 border-dashed border-gray-100">
+              <History className="h-16 w-16 text-gray-200 mx-auto mb-4" />
+              <h3 className="text-xl font-bold text-gray-400">All Settled Up</h3>
+              <p className="text-sm text-gray-500 mt-1 uppercase tracking-widest font-bold">No pending balances or debts in this room</p>
+            </div>
+          )}
         </div>
       </div>
 

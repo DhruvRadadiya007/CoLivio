@@ -90,9 +90,105 @@ export function computeNetBalances(
 // ─── pairwise owes (detailed, before simplification) ────────
 
 /**
- * Compute raw pairwise owes: owes[A][B] = net amount A still owes B
- * after accounting for all expenses and settlements.
+ * Compute user-centric pairwise owes without netting between the same pair.
+ * Returns { userOwes, userReceives } where both are maps from userId to amount.
  */
+export function computeUserPairwiseOwes(
+  currentUserId: string,
+  expenses: {
+    amount: number;
+    paidBy: string;
+    splitType?: string;
+    splitAmong: string[];
+    splitDetails?: Record<string, number>;
+  }[],
+  settlements: { fromUserId: string; toUserId: string; amount: number }[]
+): { userOwes: Record<string, number>; userReceives: Record<string, number> } {
+  const userOwes: Record<string, number> = {};
+  const userReceives: Record<string, number> = {};
+
+  const addOwe = (toId: string, v: number) => {
+    userOwes[toId] = round2((userOwes[toId] ?? 0) + v);
+  };
+  const addReceive = (fromId: string, v: number) => {
+    userReceives[fromId] = round2((userReceives[fromId] ?? 0) + v);
+  };
+
+  for (const expense of expenses) {
+    const { paidBy } = expense;
+    const shares = getShares(expense as any);
+
+    if (paidBy === currentUserId) {
+      // User paid, others owe user
+      for (const [uid, share] of Object.entries(shares)) {
+        if (uid === currentUserId) continue;
+        addReceive(uid, share);
+      }
+    } else if (shares[currentUserId]) {
+      // Someone else paid, user owes them
+      addOwe(paidBy, shares[currentUserId]);
+    }
+  }
+
+  for (const s of settlements) {
+    if (s.fromUserId === currentUserId) {
+      // User paid back someone
+      addOwe(s.toUserId, -s.amount);
+    } else if (s.toUserId === currentUserId) {
+      // Someone paid back user
+      addReceive(s.fromUserId, -s.amount);
+    }
+  }
+
+  // Clean up values near zero
+  for (const id in userOwes) if (userOwes[id] < 0.005) delete userOwes[id];
+  for (const id in userReceives) if (userReceives[id] < 0.005) delete userReceives[id];
+
+  return { userOwes, userReceives };
+}
+
+/**
+ * Compute the net balance for the current user against every other member.
+ * Returns:
+ *  - totalNet: sum of all individual net positions (derived from rounded individual balances)
+ *  - balances: Record<string, number> where +X means "User [ID] owes you X" and -X means "You owe User [ID] X"
+ */
+export function computeUserNetBalances(
+  currentUserId: string,
+  expenses: {
+    amount: number;
+    paidBy: string;
+    splitType?: string;
+    splitAmong: string[];
+    splitDetails?: Record<string, number>;
+  }[],
+  settlements: { fromUserId: string; toUserId: string; amount: number }[]
+): { totalNet: number; balances: Record<string, number> } {
+  // 1. Get raw amounts (what you owe them, what they owe you)
+  const { userOwes, userReceives } = computeUserPairwiseOwes(currentUserId, expenses, settlements);
+  
+  const balances: Record<string, number> = {};
+  let totalNet = 0;
+  
+  // 2. Identify all relevant users
+  const allUserIds = new Set([...Object.keys(userOwes), ...Object.keys(userReceives)]);
+  
+  for (const userId of allUserIds) {
+    // Net = (They owe you) - (You owe them)
+    // Positive = You are UP (they owe you)
+    // Negative = You are DOWN (you owe them)
+    const net = (userReceives[userId] || 0) - (userOwes[userId] || 0);
+    
+    if (Math.abs(net) > 0.005) {
+      const roundedNet = round2(net);
+      balances[userId] = roundedNet;
+      totalNet += roundedNet;
+    }
+  }
+  
+  return { totalNet: round2(totalNet), balances };
+}
+
 export function computePairwiseOwes(
   expenses: {
     amount: number;
