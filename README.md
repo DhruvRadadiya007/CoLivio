@@ -2,6 +2,20 @@
 
 A comprehensive SaaS application for managing shared living spaces, built with React, TypeScript, and Supabase.
 
+---
+
+## ⚡ Quick Start (Automated)
+
+If you are on Windows, you can set up the entire project (dependencies + tests) in one click:
+
+1.  **Clone the repository**
+2.  **Run `setup.bat`** (Double-click or run in terminal)
+3.  **Start Dev Server**: `npm run dev`
+
+For other platforms or manual setup, see [REQUIREMENTS.md](./REQUIREMENTS.md).
+
+---
+
 ## ✨ Features
 
 ### 🔐 Authentication & Authorization
