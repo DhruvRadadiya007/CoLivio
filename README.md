@@ -230,9 +230,9 @@ The application is deployed on Supabase with:
 
 ## 📚 Documentation
 
-- [Complete Integration Guide](./COLIVIO_COMPLETE_GUIDE.md) - Comprehensive guide
-- [Database Integration](./DATABASE_INTEGRATION.md) - Backend setup details
-- [Migration Snippets](./MIGRATION_SNIPPETS.md) - Code examples for updates
+- [Requirements](./REQUIREMENTS.md) - Project setup and tech stack
+- [Colivio Guide](./COLIVIO_GUIDE.md) - Comprehensive application guide
+- [Supabase Guide](./SUPABASE_GUIDE.md) - Database and backend setup details
 
 ## 🛠️ Development Status
 
@@ -272,8 +272,8 @@ MIT License - feel free to use for personal or commercial projects
 ## 💡 Support
 
 For questions or issues:
-- Check the documentation in `/COLIVIO_COMPLETE_GUIDE.md`
-- Review code examples in `/MIGRATION_SNIPPETS.md`
+- Check the documentation in `/COLIVIO_GUIDE.md`
+- Review backend configuration in `/SUPABASE_GUIDE.md`
 - Examine working components (MealPlanner, TaskManager)
 
 ## 🙏 Acknowledgments
