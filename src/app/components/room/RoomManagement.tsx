@@ -66,7 +66,7 @@ export const RoomManagement = () => {
     const adminCount = currentRoom.members.filter(m => m.role === 'admin').length;
 
     if (userMember?.role === 'admin' && adminCount <= 1) {
-      toast.error('Cannot leave as the last admin. Promote another member first or delete the room.');
+      toast.error('Cannot leave as the only Room Creator. Promote another member first or delete the room.');
       return;
     }
 
@@ -128,7 +128,7 @@ export const RoomManagement = () => {
         m.userId === memberId ? { ...m, role: 'admin' as const } : m
       );
       setCurrentRoom({ ...currentRoom, members: updatedMembers });
-      toast.success('Member promoted to admin');
+      toast.success('Member promoted to Room Creator');
     } catch (error: any) {
       toast.error(error.message || 'Failed to promote member');
     } finally {
@@ -145,7 +145,7 @@ export const RoomManagement = () => {
     }
   };
 
-  const isAdmin = currentRoom?.members.find(m => m.userId === user?.id)?.role === 'admin';
+  const isRoomCreator = currentRoom?.members.find(m => m.userId === user?.id)?.role === 'admin';
 
   if (!currentRoom) {
     return (
@@ -259,7 +259,7 @@ export const RoomManagement = () => {
     <div className="pb-20 lg:pb-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Room Management</h1>
-        {isAdmin && (
+        {isRoomCreator && (
           <button
             onClick={() => setShowDeleteConfirm(true)}
             className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 flex items-center gap-2"
@@ -287,11 +287,9 @@ export const RoomManagement = () => {
           ) : (
             <>
               <h2 className="text-xl font-bold text-gray-900">{currentRoom.name}</h2>
-              {isAdmin && (
-                <button onClick={() => { setNewRoomName(currentRoom.name); setIsEditingRoomName(true); }} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
-                  <Edit2 className="h-4 w-4 text-gray-600" />
-                </button>
-              )}
+              <button onClick={() => { setNewRoomName(currentRoom.name); setIsEditingRoomName(true); }} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+                <Edit2 className="h-4 w-4 text-gray-600" />
+              </button>
             </>
           )}
         </div>
@@ -348,11 +346,11 @@ export const RoomManagement = () => {
                     ? 'bg-purple-100 text-purple-800' 
                     : 'bg-blue-100 text-blue-800'
                 }`}>
-                  {member.role === 'admin' ? 'Admin' : 'Member'}
+                  {member.role === 'admin' ? 'Room Creator' : 'Member'}
                 </span>
-                {isAdmin && member.role !== 'admin' && (
+                {isRoomCreator && member.role !== 'admin' && (
                   <button onClick={() => handleMakeAdmin(member.userId)} disabled={loading} className="px-2 py-1 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-sm font-medium ml-2 transition-colors">
-                    Make Admin
+                    Make Room Creator
                   </button>
                 )}
               </div>

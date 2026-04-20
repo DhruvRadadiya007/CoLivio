@@ -47,6 +47,7 @@ export const authAPI = {
         id: data.user.id,
         email: data.user.email!,
         name: data.user.user_metadata?.name || '',
+        currency: data.user.user_metadata?.currency || 'USD',
         roomId: rm?.room_id || null,
       },
     };
@@ -63,6 +64,7 @@ export const authAPI = {
         id: user.id,
         email: user.email!,
         name: user.user_metadata?.name || '',
+        currency: user.user_metadata?.currency || 'USD',
         roomId: rm?.room_id || null,
       },
     };
@@ -73,19 +75,25 @@ export const authAPI = {
     setAccessToken(null);
   },
 
-  async updateUser(name: string) {
+  async updateUser(updates: { name?: string; currency?: string }) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
+    const metaUpdates: any = {};
+    if (updates.name !== undefined) metaUpdates.name = updates.name;
+    if (updates.currency !== undefined) metaUpdates.currency = updates.currency;
+
     const { error: authError } = await supabase.auth.updateUser({
-      data: { name }
+      data: metaUpdates
     });
     if (authError) throw authError;
 
     // Try to update name in room_members as well
-    await supabase.from('room_members').update({ name }).eq('user_id', user.id);
+    if (updates.name !== undefined) {
+      await supabase.from('room_members').update({ name: updates.name }).eq('user_id', user.id);
+    }
     
-    return name;
+    return updates;
   },
 };
 
@@ -297,45 +305,74 @@ export const taskAPI = {
 
 // ==================== EXPENSE API ====================
 
-// Frontend expects: id, title, amount, paidBy, splitAmong, date, roomId
+// Frontend expects: id, title, amount, paidBy, splitAmong, splitType, splitDetails, date, roomId
 export const expenseAPI = {
   async getExpenses(roomId: string) {
     const { data, error } = await supabase.from('expenses').select('*').eq('room_id', roomId);
     if (error) throw error;
-    return data.map(e => ({
-      id: e.id,
-      roomId: e.room_id,
-      title: e.description,
-      amount: e.amount,
-      paidBy: e.paid_by,
-      splitAmong: e.split_details || [],
-      date: e.date ? e.date.split('T')[0] : ''
-    }));
+    return data.map((e: any) => {
+      const rawDetails = e.split_details;
+      const splitType: string = e.split_type || 'equal';
+      // Legacy data: split_details was stored as an array of user IDs (equal split)
+      const isLegacyArray = Array.isArray(rawDetails);
+      return {
+        id: e.id,
+        roomId: e.room_id,
+        title: e.description,
+        amount: e.amount,
+        category: e.category || 'General',
+        paidBy: e.paid_by,
+        splitType,
+        // splitAmong: unified list of participant IDs
+        splitAmong: isLegacyArray
+          ? (rawDetails as string[])
+          : Object.keys(rawDetails || {}),
+        // splitDetails: { userId → amount/percentage } for exact & percentage splits
+        splitDetails: isLegacyArray ? {} : (rawDetails as Record<string, number> || {}),
+        date: e.date ? e.date.split('T')[0] : '',
+      };
+    });
   },
 
   async createExpense(expense: any) {
+    // For equal splits, store participant IDs array (backward compat).
+    // For exact / percentage splits, store { userId: value } map.
+    const splitType: string = expense.splitType || 'equal';
+    const splitDetailsToStore =
+      splitType === 'equal'
+        ? expense.splitAmong
+        : expense.splitDetails;
+
     const { data, error } = await supabase.from('expenses').insert({
       room_id: expense.roomId,
       description: expense.title,
       amount: expense.amount,
-      category: 'General',
+      category: expense.category || 'General',
       paid_by: expense.paidBy,
-      split_type: 'custom',
-      split_details: expense.splitAmong,
-      date: expense.date
+      split_type: splitType,
+      split_details: splitDetailsToStore,
+      date: expense.date,
     }).select().single();
     if (error) throw error;
     return { ...expense, id: data.id };
   },
 
   async updateExpense(roomId: string, expenseId: string, updates: any) {
-    let toUpdate: any = {};
-    if (updates.title !== undefined) toUpdate.description = updates.title;
-    if (updates.amount !== undefined) toUpdate.amount = updates.amount;
-    if (updates.paidBy !== undefined) toUpdate.paid_by = updates.paidBy;
-    if (updates.splitAmong !== undefined) toUpdate.split_details = updates.splitAmong;
-    if (updates.date !== undefined) toUpdate.date = updates.date;
-    
+    const toUpdate: any = {};
+    if (updates.title     !== undefined) toUpdate.description  = updates.title;
+    if (updates.amount    !== undefined) toUpdate.amount       = updates.amount;
+    if (updates.category  !== undefined) toUpdate.category     = updates.category;
+    if (updates.paidBy    !== undefined) toUpdate.paid_by      = updates.paidBy;
+    if (updates.date      !== undefined) toUpdate.date         = updates.date;
+    if (updates.splitType !== undefined) toUpdate.split_type   = updates.splitType;
+    if (updates.splitAmong !== undefined || updates.splitDetails !== undefined) {
+      const splitType: string = updates.splitType || 'equal';
+      toUpdate.split_details =
+        splitType === 'equal'
+          ? (updates.splitAmong ?? [])
+          : (updates.splitDetails ?? {});
+    }
+
     const { error } = await supabase.from('expenses').update(toUpdate).eq('id', expenseId).eq('room_id', roomId);
     if (error) throw error;
     return updates;
@@ -344,6 +381,38 @@ export const expenseAPI = {
   async deleteExpense(roomId: string, expenseId: string) {
     await supabase.from('expenses').delete().eq('id', expenseId).eq('room_id', roomId);
   },
+};
+
+// ==================== EXPENSE CATEGORY API ====================
+
+export const expenseCategoryAPI = {
+  async getCategories(roomId: string) {
+    const { data, error } = await supabase.from('expense_categories').select('*').eq('room_id', roomId);
+    if (error) {
+      // If table doesn't exist yet or other error, return empty array to prevent crashing
+      console.warn('Could not fetch categories:', error);
+      return [];
+    }
+    return data.map((c: any) => ({
+      id: c.id,
+      roomId: c.room_id,
+      name: c.name
+    }));
+  },
+
+  async createCategory(roomId: string, name: string) {
+    const { data, error } = await supabase.from('expense_categories').insert({
+      room_id: roomId,
+      name
+    }).select().single();
+    if (error) throw error;
+    return { id: data.id, roomId: data.room_id, name: data.name };
+  },
+
+  async deleteCategory(categoryId: string) {
+    const { error } = await supabase.from('expense_categories').delete().eq('id', categoryId);
+    if (error) throw error;
+  }
 };
 
 // ==================== BILL API ====================
@@ -396,18 +465,84 @@ export const billAPI = {
   },
 };
 
+// ==================== BILL CYCLE CATCH-UP ====================
+// When a recurring bill is added with a past due_date, auto-insert pending entries for each
+// missing month up to and including the current month.
+export async function createRecurringBillCatchup(
+  roomId: string,
+  templateBill: { name: string; amount: number; dueDateStr: string }
+): Promise<void> {
+  const { name, amount, dueDateStr } = templateBill;
+
+  const firstDate = new Date(dueDateStr);
+  if (isNaN(firstDate.getTime())) return;
+
+  const dayOfMonth = firstDate.getDate();
+  const today = new Date();
+
+  // Build list of months that need a bill entry (from the month AFTER the first entry to now)
+  const missedMonths: Date[] = [];
+  let cursor = new Date(firstDate.getFullYear(), firstDate.getMonth() + 1, 1);
+
+  while (
+    cursor.getFullYear() < today.getFullYear() ||
+    (cursor.getFullYear() === today.getFullYear() && cursor.getMonth() <= today.getMonth())
+  ) {
+    missedMonths.push(new Date(cursor));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  if (missedMonths.length === 0) return;
+
+  // Fetch existing bills for this room and name to avoid duplicates
+  const { data: existing } = await supabase
+    .from('bills')
+    .select('due_date')
+    .eq('room_id', roomId)
+    .eq('name', name);
+
+  const existingMonths = new Set(
+    (existing || []).map((b: any) => {
+      const d = new Date(b.due_date);
+      return `${d.getFullYear()}-${d.getMonth()}`;
+    })
+  );
+
+  const toInsert = missedMonths
+    .filter(m => !existingMonths.has(`${m.getFullYear()}-${m.getMonth()}`))
+    .map(m => {
+      const lastDay = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+      const day = Math.min(dayOfMonth, lastDay);
+      const dueDate = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return {
+        room_id: roomId,
+        name,
+        amount,
+        category: 'General',
+        due_date: dueDate,
+        is_recurring: true,
+        status: 'pending',
+      };
+    });
+
+  if (toInsert.length > 0) {
+    await supabase.from('bills').insert(toInsert);
+  }
+}
+
 // ==================== PERSONNEL API ====================
 
 export const personnelAPI = {
   async getPersonnel(roomId: string) {
     const { data, error } = await supabase.from('personnel').select('*').eq('room_id', roomId);
     if (error) throw error;
-    return data.map(p => ({
+    return data.map((p: any) => ({
       id: p.id,
       roomId: p.room_id,
       name: p.name,
       role: p.role,
-      monthlyCompensation: p.salary
+      monthlyCompensation: p.salary,
+      joiningDate: p.start_date ? p.start_date.split('T')[0] : new Date().toISOString().split('T')[0],
     }));
   },
 
@@ -418,10 +553,10 @@ export const personnelAPI = {
       role: person.role,
       salary: person.monthlyCompensation,
       payment_frequency: 'monthly',
-      start_date: new Date().toISOString()
+      start_date: person.joiningDate ? new Date(person.joiningDate).toISOString() : new Date().toISOString()
     }).select().single();
     if (error) throw error;
-    return { ...person, id: data.id };
+    return { ...person, id: data.id, joiningDate: person.joiningDate || new Date().toISOString().split('T')[0] };
   },
 
   async updatePersonnel(roomId: string, personId: string, updates: any) {
@@ -429,6 +564,7 @@ export const personnelAPI = {
     if (updates.name !== undefined) toUpdate.name = updates.name;
     if (updates.role !== undefined) toUpdate.role = updates.role;
     if (updates.monthlyCompensation !== undefined) toUpdate.salary = updates.monthlyCompensation;
+    if (updates.joiningDate !== undefined) toUpdate.start_date = new Date(updates.joiningDate).toISOString();
 
     const { error } = await supabase.from('personnel').update(toUpdate).eq('id', personId).eq('room_id', roomId);
     if (error) throw error;
@@ -463,6 +599,11 @@ export const attendanceAPI = {
     if (error) throw error;
     return { ...record, id: data.id };
   },
+
+  async deleteAttendance(id: string) {
+    const { error } = await supabase.from('attendance').delete().eq('id', id);
+    if (error) throw error;
+  },
 };
 
 // ==================== PAYMENT API ====================
@@ -488,7 +629,72 @@ export const paymentAPI = {
     return { ...payment, id: data.id };
   },
 
+  async deletePayment(paymentId: string) {
+    const { error } = await supabase.from('payments').delete().eq('id', paymentId);
+    if (error) throw error;
+  },
+
   async updatePayment(roomId: string, paymentId: string, updates: any) {
     return updates;
+  },
+};
+
+// ==================== SPLIT SETTLEMENT API ====================
+
+export const splitSettlementAPI = {
+  async getSettlements(roomId: string) {
+    const { data, error } = await supabase
+      .from('split_settlements')
+      .select('*')
+      .eq('room_id', roomId)
+      .order('settled_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map((s: any) => ({
+      id: s.id,
+      roomId: s.room_id,
+      fromUserId: s.from_user_id,
+      toUserId: s.to_user_id,
+      amount: s.amount,
+      note: s.note || '',
+      settledAt: s.settled_at,
+    }));
+  },
+
+  async createSettlement(settlement: {
+    roomId: string;
+    fromUserId: string;
+    toUserId: string;
+    amount: number;
+    note?: string;
+  }) {
+    const { data, error } = await supabase
+      .from('split_settlements')
+      .insert({
+        room_id: settlement.roomId,
+        from_user_id: settlement.fromUserId,
+        to_user_id: settlement.toUserId,
+        amount: settlement.amount,
+        note: settlement.note || null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return {
+      id: data.id,
+      roomId: data.room_id,
+      fromUserId: data.from_user_id,
+      toUserId: data.to_user_id,
+      amount: data.amount,
+      note: data.note || '',
+      settledAt: data.settled_at,
+    };
+  },
+
+  async deleteSettlement(settlementId: string) {
+    const { error } = await supabase
+      .from('split_settlements')
+      .delete()
+      .eq('id', settlementId);
+    if (error) throw error;
   },
 };

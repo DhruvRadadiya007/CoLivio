@@ -67,9 +67,7 @@ export const ForgotPassword = () => {
 
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8">
-      <div className="text-center mb-4">
-        <h1 className="text-2xl font-bold text-indigo-600">CoLivio</h1>
-      </div>
+
       <Link to="/" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-800 mb-6">
         <ArrowLeft className="h-5 w-5" />
         Back to login

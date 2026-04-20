@@ -12,6 +12,9 @@ import {
   UtensilsCrossed,
   CheckSquare,
   DollarSign,
+  Euro,
+  PoundSterling,
+  IndianRupee,
   Receipt,
   Briefcase,
   BarChart3,
@@ -22,8 +25,10 @@ import {
 import { useState } from "react";
 
 export const MainLayout = () => {
-  const { user, currentRoom, logout } = useApp();
+  const { user, currentRoom, logout, currency } = useApp();
   const navigate = useNavigate();
+
+  const CurrencyIcon = currency === 'EUR' ? Euro : currency === 'GBP' ? PoundSterling : currency === 'INR' ? IndianRupee : DollarSign;
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -53,7 +58,7 @@ export const MainLayout = () => {
     { path: "/app/tasks", icon: CheckSquare, label: "Tasks" },
     {
       path: "/app/expenses",
-      icon: DollarSign,
+      icon: CurrencyIcon,
       label: "Expenses",
     },
     { path: "/app/bills", icon: Receipt, label: "Bills" },

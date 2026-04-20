@@ -1,329 +1,263 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { DollarSign, Plus, Edit2, Trash2, Calendar, TrendingUp } from 'lucide-react';
-import { toast } from 'sonner';
+import { 
+  Plus, 
+  HandCoins, 
+  Receipt, 
+  LayoutDashboard, 
+  ArrowUpRight, 
+  ArrowDownLeft, 
+  History, 
+  CreditCard,
+  Wallet,
+  TrendingUp,
+  Tag,
+  Search
+} from 'lucide-react';
+import { AddExpenseModal } from './AddExpenseModal';
+import { SettleModal } from './SettleModal';
+import { BalanceSheet } from './BalanceSheet';
+import { ActivityHistory } from './ActivityHistory';
+import { computeNetBalances } from './debtSimplifier';
 
 export const ExpenseTracker = () => {
-  const { currentRoom, expenses, setExpenses } = useApp();
+  const { currentRoom, expenses, splitSettlements, currency, loading, refreshData } = useApp();
+  const [activeTab, setActiveTab] = useState<'overview' | 'balances' | 'history'>('overview');
   const [showAddExpense, setShowAddExpense] = useState(false);
-  const [editingExpense, setEditingExpense] = useState<string | null>(null);
-  const [title, setTitle] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState('');
-  const [splitAmong, setSplitAmong] = useState<string[]>([]);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showSettle, setShowSettle] = useState(false);
 
-  const handleAddExpense = () => {
-    if (!currentRoom || !title.trim() || !amount || !paidBy || splitAmong.length === 0) {
-      toast.error('Please fill all fields');
-      return;
-    }
+  const currencySymbol = currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : '$';
 
-    const newExpense = {
-      id: Date.now().toString(),
-      title,
-      amount: parseFloat(amount),
-      paidBy,
-      splitAmong,
-      date,
-      roomId: currentRoom.id,
-    };
+  // Summary logic
+  const netBalances = useMemo(() => 
+    computeNetBalances(expenses, splitSettlements),
+  [expenses, splitSettlements]);
 
-    setExpenses([...expenses, newExpense]);
-    setShowAddExpense(false);
-    resetForm();
-    toast.success('Expense added successfully!');
-  };
+  const currentUserId = currentRoom?.members?.[0]?.userId; // For demo/context purposes
+  const userNet = currentUserId ? (netBalances[currentUserId] || 0) : 0;
 
-  const handleUpdateExpense = () => {
-    if (!editingExpense || !title.trim() || !amount || !paidBy || splitAmong.length === 0) return;
+  const totalRoomExpenses = useMemo(() => 
+    expenses.reduce((sum, e) => sum + e.amount, 0),
+  [expenses]);
 
-    const updatedExpenses = expenses.map(e =>
-      e.id === editingExpense
-        ? { ...e, title, amount: parseFloat(amount), paidBy, splitAmong, date }
-        : e
-    );
+  const totalOwed = useMemo(() => 
+    Object.values(netBalances).filter(v => v > 0).reduce((sum, v) => sum + v, 0),
+  [netBalances]);
 
-    setExpenses(updatedExpenses);
-    setEditingExpense(null);
-    setShowAddExpense(false);
-    resetForm();
-    toast.success('Expense updated successfully!');
-  };
-
-  const handleDeleteExpense = (expenseId: string) => {
-    const updatedExpenses = expenses.filter(e => e.id !== expenseId);
-    setExpenses(updatedExpenses);
-    toast.success('Expense deleted!');
-  };
-
-  const startEdit = (expense: any) => {
-    setEditingExpense(expense.id);
-    setTitle(expense.title);
-    setAmount(expense.amount.toString());
-    setPaidBy(expense.paidBy);
-    setSplitAmong(expense.splitAmong);
-    setDate(expense.date);
-    setShowAddExpense(true);
-  };
-
-  const resetForm = () => {
-    setTitle('');
-    setAmount('');
-    setPaidBy('');
-    setSplitAmong([]);
-    setDate(new Date().toISOString().split('T')[0]);
-  };
-
-  const toggleSplitMember = (memberId: string) => {
-    if (splitAmong.includes(memberId)) {
-      setSplitAmong(splitAmong.filter(id => id !== memberId));
-    } else {
-      setSplitAmong([...splitAmong, memberId]);
-    }
-  };
+  const totalToReceive = useMemo(() => 
+    Object.values(netBalances).filter(v => v < 0).reduce((sum, v) => sum + Math.abs(v), 0),
+  [netBalances]);
 
   if (!currentRoom) {
     return (
-      <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-        <DollarSign className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">No Room Selected</h2>
-        <p className="text-gray-600">Please create or join a room first</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8 bg-white rounded-3xl border border-gray-100 shadow-sm">
+        <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-6">
+          <Wallet className="h-10 w-10 text-gray-300" />
+        </div>
+        <h2 className="text-2xl font-black text-gray-900 mb-2">No Room Selected</h2>
+        <p className="text-gray-500 max-w-xs leading-relaxed">Please create or join a room first to start tracking shared expenses.</p>
       </div>
     );
   }
 
-  const roomExpenses = expenses.filter(e => e.roomId === currentRoom.id);
-  const totalExpenses = roomExpenses.reduce((sum, e) => sum + e.amount, 0);
-
-  // Calculate monthly summary
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-  const monthlyExpenses = roomExpenses.filter(e => {
-    const expenseDate = new Date(e.date);
-    return expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear;
-  });
-  const monthlyTotal = monthlyExpenses.reduce((sum, e) => sum + e.amount, 0);
-
-  // Calculate per-member breakdown
-  const memberBreakdown = currentRoom.members.map(member => {
-    const paid = roomExpenses
-      .filter(e => e.paidBy === member.userId)
-      .reduce((sum, e) => sum + e.amount, 0);
-    
-    const owes = roomExpenses
-      .filter(e => e.splitAmong.includes(member.userId))
-      .reduce((sum, e) => sum + (e.amount / e.splitAmong.length), 0);
-
-    return {
-      member,
-      paid,
-      owes,
-      balance: paid - owes,
-    };
-  });
-
   return (
-    <div className="pb-20 lg:pb-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Expense Tracker</h1>
-          <p className="text-gray-600 mt-1">Track and split expenses fairly</p>
-        </div>
-        <button
-          onClick={() => {
-            setShowAddExpense(true);
-            setEditingExpense(null);
-            resetForm();
-          }}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
-        >
-          <Plus className="h-5 w-5" />
-          <span className="hidden sm:inline">Add Expense</span>
-        </button>
-      </div>
+    <div className="max-w-6xl mx-auto space-y-8 pb-24 lg:pb-8">
+      {/* Header section with Stats */}
+      <div className="bg-white rounded-[40px] p-8 lg:p-10 border border-gray-100 shadow-xl shadow-indigo-100/20 relative overflow-hidden">
+        {/* Abstract background blobs */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl opacity-50 -z-10" />
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-green-50 rounded-full translate-y-1/2 -translate-x-1/2 blur-2xl opacity-50 -z-10" />
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="h-5 w-5 text-indigo-600" />
-            <h3 className="font-semibold text-gray-700">Total Expenses</h3>
-          </div>
-          <p className="text-3xl font-bold text-gray-900">₹{totalExpenses.toFixed(2)}</p>
-          <p className="text-sm text-gray-600 mt-1">All time</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center gap-2 mb-2">
-            <Calendar className="h-5 w-5 text-green-600" />
-            <h3 className="font-semibold text-gray-700">This Month</h3>
-          </div>
-          <p className="text-3xl font-bold text-gray-900">₹{monthlyTotal.toFixed(2)}</p>
-          <p className="text-sm text-gray-600 mt-1">{monthlyExpenses.length} expenses</p>
-        </div>
-      </div>
-
-      {/* Member Breakdown */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Member Breakdown</h2>
-        <div className="space-y-3">
-          {memberBreakdown.map(({ member, paid, owes, balance }) => (
-            <div key={member.userId} className="p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-medium text-gray-900">{member.name}</h3>
-                <span className={`font-bold ${balance > 0 ? 'text-green-600' : balance < 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                  {balance > 0 ? '+' : ''}₹{balance.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex gap-4 text-sm text-gray-600">
-                <span>Paid: ₹{paid.toFixed(2)}</span>
-                <span>Owes: ₹{owes.toFixed(2)}</span>
-              </div>
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8 mb-10">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <span className="p-2 bg-indigo-600 rounded-2xl">
+                <Wallet className="h-6 w-6 text-white" />
+              </span>
+              <h1 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight">Financial Hub</h1>
             </div>
-          ))}
+            <p className="text-gray-500 font-bold uppercase text-[10px] tracking-widest pl-12">Split bills • Settle debts • Live balances</p>
+          </div>
+
+          <div className="flex items-center gap-3 w-full lg:w-auto">
+            <button
+              onClick={() => setShowSettle(true)}
+              className="flex-1 lg:flex-none px-6 py-4 bg-gray-50 text-gray-700 font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-gray-100 transition-all flex items-center justify-center gap-2 border border-gray-100"
+            >
+              <HandCoins className="h-4 w-4" />
+              Settle Up
+            </button>
+            <button
+              onClick={() => setShowAddExpense(true)}
+              className="flex-1 lg:flex-none px-8 py-4 bg-indigo-600 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-200"
+            >
+              <Plus className="h-4 w-4" />
+              Add Expense
+            </button>
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-6 bg-gray-900 rounded-3xl text-white relative group overflow-hidden">
+            <TrendingUp className="absolute top-6 right-6 h-6 w-6 text-white/20 group-hover:text-white/40 transition-all group-hover:scale-110" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2">Total Pool</p>
+            <h3 className="text-3xl font-black">{currencySymbol}{totalRoomExpenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
+            <p className="text-[10px] font-bold text-white/40 mt-1 uppercase tracking-widest">All room expenses recorded</p>
+          </div>
+
+          <div className="p-6 bg-white rounded-3xl border border-gray-100 ring-1 ring-red-50 relative group overflow-hidden">
+            <ArrowUpRight className="absolute top-6 right-6 h-6 w-6 text-red-100 group-hover:text-red-200 transition-all group-hover:scale-110" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-2">Total Owed</p>
+            <h3 className="text-3xl font-black text-gray-900">{currencySymbol}{totalOwed.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
+            <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase tracking-widest">Across all members</p>
+          </div>
+
+          <div className="p-6 bg-white rounded-3xl border border-gray-100 ring-1 ring-green-50 relative group overflow-hidden">
+            <ArrowDownLeft className="absolute top-6 right-6 h-6 w-6 text-green-100 group-hover:text-green-200 transition-all group-hover:scale-110" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-green-600 mb-2">Total to Receive</p>
+            <h3 className="text-3xl font-black text-gray-900">{currencySymbol}{totalToReceive.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
+            <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase tracking-widest">Across all members</p>
+          </div>
         </div>
       </div>
 
-      {/* Expenses List */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Expenses</h2>
-        {roomExpenses.length > 0 ? (
-          <div className="space-y-3">
-            {roomExpenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(expense => {
-              const payer = currentRoom.members.find(m => m.userId === expense.paidBy);
-              const splitPerPerson = expense.amount / expense.splitAmong.length;
-              return (
-                <div key={expense.id} className="p-4 border border-gray-200 rounded-lg">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-medium text-gray-900">{expense.title}</h3>
-                        <span className="text-xl font-bold text-gray-900">₹{expense.amount.toFixed(2)}</span>
+      {/* Tabs Layout */}
+      <div className="space-y-6">
+        {/* Custom Tab Switcher */}
+        <div className="flex bg-white/50 backdrop-blur-md p-1.5 rounded-[28px] border border-white/20 w-full lg:w-fit shadow-lg shadow-indigo-100/10 ring-1 ring-gray-950/5">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex-1 lg:flex-none px-8 py-3.5 text-xs font-black uppercase tracking-[0.15em] rounded-[22px] transition-all flex items-center justify-center gap-3 ${activeTab === 'overview' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100/50'}`}
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('balances')}
+            className={`flex-1 lg:flex-none px-8 py-3.5 text-xs font-black uppercase tracking-[0.15em] rounded-[22px] transition-all flex items-center justify-center gap-3 ${activeTab === 'balances' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100/50'}`}
+          >
+            <CreditCard className="h-4 w-4" />
+            Balances
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`flex-1 lg:flex-none px-8 py-3.5 text-xs font-black uppercase tracking-[0.15em] rounded-[22px] transition-all flex items-center justify-center gap-3 ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100/50'}`}
+          >
+            <History className="h-4 w-4" />
+            Activity
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 bg-white rounded-[40px] border border-gray-100">
+            <div className="relative w-16 h-16 mb-4">
+              <div className="absolute inset-0 border-4 border-indigo-50 rounded-full" />
+              <div className="absolute inset-0 border-4 border-transparent border-t-indigo-600 rounded-full animate-spin" />
+            </div>
+            <p className="text-xs font-black uppercase tracking-widest text-indigo-600/50">Computing data...</p>
+          </div>
+        ) : (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both">
+            {activeTab === 'overview' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left: Summary and Key Actions */}
+                <div className="space-y-6">
+                  <div className="bg-indigo-600 rounded-[40px] p-8 text-white relative group overflow-hidden shadow-2xl shadow-indigo-200 h-full">
+                    <h2 className="text-2xl font-black mb-1">Financial Overview</h2>
+                    <p className="text-indigo-200 text-sm font-bold uppercase tracking-widest mb-8">Quick actions & Room status</p>
+                    
+                    <div className="space-y-4">
+                      <div className="p-6 bg-indigo-500/30 backdrop-blur-xl border border-white/10 rounded-3xl">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60 mb-1">Top Expense Creator</p>
+                        {expenses.length > 0 ? (
+                          <p className="text-lg font-black truncate">
+                            {(() => {
+                              const payers = expenses.reduce((acc, curr) => {
+                                acc[curr.paidBy] = (acc[curr.paidBy] || 0) + 1;
+                                return acc;
+                              }, {} as any);
+                              const topId = Object.entries(payers).sort((a,b) => (b[1] as any) - (a[1] as any))[0]?.[0];
+                              return currentRoom.members.find(m => m.userId === topId)?.name || 'N/A';
+                            })()}
+                          </p>
+                        ) : <p className="text-lg font-black italic text-white/30">None yet</p>}
                       </div>
-                      <div className="text-sm text-gray-600 space-y-1">
-                        <p>Paid by: {payer?.name || 'Unknown'}</p>
-                        <p>Split among: {expense.splitAmong.length} member(s) (₹{splitPerPerson.toFixed(2)} each)</p>
-                        <p className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          {new Date(expense.date).toLocaleDateString()}
-                        </p>
+                      
+                      <div className="p-6 bg-indigo-500/30 backdrop-blur-xl border border-white/10 rounded-3xl">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60 mb-1">Recent Big Spender</p>
+                        {expenses.length > 0 ? (
+                          <p className="text-lg font-black truncate">
+                            {expenses.sort((a,b) => b.amount - a.amount)[0]?.title} 
+                            <span className="text-indigo-300 ml-2 font-black">{currencySymbol}{expenses.sort((a,b) => b.amount - a.amount)[0]?.amount}</span>
+                          </p>
+                        ) : <p className="text-lg font-black italic text-white/30">None yet</p>}
                       </div>
-                    </div>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => startEdit(expense)}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                      >
-                        <Edit2 className="h-4 w-4 text-gray-600" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteExpense(expense.id)}
-                        className="p-2 hover:bg-red-100 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4 text-red-600" />
-                      </button>
                     </div>
                   </div>
                 </div>
-              );
-            })}
+
+                {/* Right: Recent activity snapshot */}
+                <div className="bg-white rounded-[40px] p-8 lg:p-10 border border-gray-100 shadow-sm flex flex-col h-full">
+                  <div className="flex items-center justify-between mb-8">
+                    <h3 className="text-xl font-black text-gray-900 tracking-tight flex items-center gap-2">
+                       Recent Entries
+                    </h3>
+                    <button 
+                      onClick={() => setActiveTab('history')}
+                      className="text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-800 transition-colors"
+                    >
+                      View All
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4 flex-1">
+                    {expenses.slice(0, 4).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(exp => (
+                      <div key={exp.id} className="flex items-center justify-between p-4 hover:bg-gray-50 rounded-2xl transition-colors border border-transparent hover:border-gray-100 group">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center font-bold text-gray-400 group-hover:bg-white group-hover:text-indigo-600 transition-all shadow-indigo-100/50">
+                            <Receipt className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-gray-900 truncate text-sm">{exp.title}</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                              {new Date(exp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} • {currentRoom.members.find(m => m.userId === exp.paidBy)?.name}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="font-black text-gray-900 text-base">{currencySymbol}{exp.amount.toFixed(2)}</p>
+                      </div>
+                    ))}
+                    {expenses.length === 0 && (
+                      <div className="text-center py-20 flex flex-col items-center">
+                        <div className="w-16 h-16 bg-gray-50 rounded-3xl flex items-center justify-center mb-4">
+                          <Search className="h-6 w-6 text-gray-200" />
+                        </div>
+                        <p className="text-xs font-black uppercase tracking-widest text-gray-300">Clean Slate</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'balances' && <BalanceSheet />}
+            {activeTab === 'history' && <ActivityHistory />}
           </div>
-        ) : (
-          <p className="text-gray-500 text-center py-8">No expenses yet</p>
         )}
       </div>
 
-      {/* Add/Edit Expense Modal */}
-      {showAddExpense && (
-        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">
-              {editingExpense ? 'Edit Expense' : 'Add New Expense'}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="Groceries, Rent, etc."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Amount (₹)</label>
-                <input
-                  type="number"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="0.00"
-                  step="0.01"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Paid By</label>
-                <select
-                  value={paidBy}
-                  onChange={(e) => setPaidBy(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                >
-                  <option value="">Select member</option>
-                  {currentRoom.members.map(member => (
-                    <option key={member.userId} value={member.userId}>
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Split Among</label>
-                <div className="space-y-2">
-                  {currentRoom.members.map(member => (
-                    <label key={member.userId} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={splitAmong.includes(member.userId)}
-                        onChange={() => toggleSplitMember(member.userId)}
-                        className="w-4 h-4 text-indigo-600 rounded"
-                      />
-                      <span className="text-gray-900">{member.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={editingExpense ? handleUpdateExpense : handleAddExpense}
-                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                >
-                  {editingExpense ? 'Update' : 'Add'} Expense
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAddExpense(false);
-                    setEditingExpense(null);
-                    resetForm();
-                  }}
-                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modals */}
+      <AddExpenseModal 
+        isOpen={showAddExpense} 
+        onClose={() => setShowAddExpense(false)} 
+      />
+      
+      <SettleModal 
+        isOpen={showSettle} 
+        onClose={() => setShowSettle(false)} 
+      />
     </div>
   );
 };

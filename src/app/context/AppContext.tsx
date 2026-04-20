@@ -9,6 +9,8 @@ import {
   personnelAPI,
   attendanceAPI,
   paymentAPI,
+  expenseCategoryAPI,
+  splitSettlementAPI,
   setAccessToken,
   getAccessToken,
 } from '../services/api';
@@ -20,6 +22,7 @@ export interface User {
   profilePicture?: string;
   roomId?: string;
   role?: 'admin' | 'member';
+  currency?: string;
 }
 
 export interface Room {
@@ -57,14 +60,33 @@ export interface Task {
   createdAt: string;
 }
 
+export interface ExpenseCategory {
+  id: string;
+  roomId: string;
+  name: string;
+}
+
 export interface Expense {
   id: string;
   title: string;
   amount: number;
+  category: string;
   paidBy: string;
-  splitAmong: string[];
+  splitAmong: string[];           // participant user IDs (always populated)
+  splitType: 'equal' | 'exact' | 'percentage';
+  splitDetails: Record<string, number>; // userId → amount (exact) or % (percentage)
   date: string;
   roomId: string;
+}
+
+export interface SplitSettlement {
+  id: string;
+  roomId: string;
+  fromUserId: string;   // who paid
+  toUserId: string;     // who received
+  amount: number;
+  note: string;
+  settledAt: string;
 }
 
 export interface Bill {
@@ -82,6 +104,7 @@ export interface Personnel {
   name: string;
   role: string;
   monthlyCompensation: number;
+  joiningDate: string;
   roomId: string;
 }
 
@@ -114,6 +137,8 @@ interface AppContextType {
   setTasks: (tasks: Task[]) => void;
   expenses: Expense[];
   setExpenses: (expenses: Expense[]) => void;
+  expenseCategories: ExpenseCategory[];
+  setExpenseCategories: (categories: ExpenseCategory[]) => void;
   bills: Bill[];
   setBills: (bills: Bill[]) => void;
   personnel: Personnel[];
@@ -122,9 +147,13 @@ interface AppContextType {
   setAttendance: (attendance: Attendance[]) => void;
   payments: Payment[];
   setPayments: (payments: Payment[]) => void;
+  splitSettlements: SplitSettlement[];
+  setSplitSettlements: (s: SplitSettlement[]) => void;
   logout: () => void;
   refreshData: () => Promise<void>;
   loading: boolean;
+  currency: string;
+  setCurrency: (currency: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -143,11 +172,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [meals, setMeals] = useState<Meal[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [splitSettlements, setSplitSettlements] = useState<SplitSettlement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currency, setCurrencyState] = useState(() => localStorage.getItem('currency') || 'USD');
+
+  const setCurrency = (c: string) => {
+    localStorage.setItem('currency', c);
+    setCurrencyState(c);
+  };
 
   // Refresh all data for the current room
   const refreshData = useCallback(async () => {
@@ -159,27 +196,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         mealsData,
         tasksData,
         expensesData,
+        expenseCategoriesData,
         billsData,
         personnelData,
         attendanceData,
         paymentsData,
+        settlementsData,
       ] = await Promise.all([
         mealAPI.getMeals(currentRoom.id),
         taskAPI.getTasks(currentRoom.id),
         expenseAPI.getExpenses(currentRoom.id),
+        expenseCategoryAPI.getCategories(currentRoom.id),
         billAPI.getBills(currentRoom.id),
         personnelAPI.getPersonnel(currentRoom.id),
         attendanceAPI.getAttendance(currentRoom.id),
         paymentAPI.getPayments(currentRoom.id),
+        splitSettlementAPI.getSettlements(currentRoom.id).catch(() => []),
       ]);
 
       setMeals(mealsData || []);
-      setTasks(tasksData || []);
-      setExpenses(expensesData || []);
+      setTasks((tasksData as Task[]) || []);
+      setExpenses(expensesData as Expense[] || []);
+      setExpenseCategories(expenseCategoriesData || []);
       setBills(billsData || []);
-      setPersonnel(personnelData || []);
+      setPersonnel((personnelData as Personnel[]) || []);
       setAttendance(attendanceData || []);
-      setPayments(paymentsData || []);
+      setPayments((paymentsData as Payment[]) || []);
+      setSplitSettlements((settlementsData as SplitSettlement[]) || []);
     } catch (error) {
       console.error('Error refreshing data:', error);
     } finally {
@@ -195,6 +238,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         
         if (sessionUser) {
           setUser(sessionUser);
+          
+          if (sessionUser.currency) {
+            setCurrencyState(sessionUser.currency);
+            localStorage.setItem('currency', sessionUser.currency);
+          }
           
           // If user has a room, fetch it
           if (sessionUser.roomId) {
@@ -230,10 +278,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setMeals([]);
       setTasks([]);
       setExpenses([]);
+      setExpenseCategories([]);
       setBills([]);
       setPersonnel([]);
       setAttendance([]);
       setPayments([]);
+      setSplitSettlements([]);
       setLoading(false);
     }
   }, [currentRoom, refreshData]);
@@ -249,10 +299,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setMeals([]);
       setTasks([]);
       setExpenses([]);
+      setExpenseCategories([]);
       setBills([]);
       setPersonnel([]);
       setAttendance([]);
       setPayments([]);
+      setSplitSettlements([]);
       setAccessToken(null);
     }
   }, []);
@@ -270,6 +322,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setTasks,
         expenses,
         setExpenses,
+        expenseCategories,
+        setExpenseCategories,
         bills,
         setBills,
         personnel,
@@ -278,9 +332,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setAttendance,
         payments,
         setPayments,
+        splitSettlements,
+        setSplitSettlements,
         logout,
         refreshData,
         loading,
+        currency,
+        setCurrency,
       }}
     >
       {children}
